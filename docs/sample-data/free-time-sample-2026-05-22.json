@@ -1,0 +1,166 @@
+{
+  "metadata": {
+    "purpose": "MVP mock data only. The xlsx timetable is not a product input path.",
+    "sourceWorkbook": "../timeTableForStu10.xlsx",
+    "date": "2026-05-22",
+    "timezone": "Asia/Shanghai",
+    "dayOfWeek": "Friday",
+    "assumedSemesterWeek": 13,
+    "periodTimeAssumption": {
+      "3": ["09:55", "10:40"],
+      "4": ["10:45", "11:30"],
+      "7": ["15:25", "16:10"],
+      "8": ["16:15", "17:00"],
+      "9": ["17:05", "17:50"],
+      "11": ["19:20", "20:05"],
+      "12": ["20:10", "20:55"],
+      "13": ["21:00", "21:45"]
+    },
+    "notes": [
+      "Friday classes were derived from timetable text for week 13.",
+      "The temporary meeting is a standalone morning hard-time block."
+    ]
+  },
+  "fixedEvents": {
+    "2026-05-22": [
+      {
+        "id": "class-2026-05-22-gaodengshuxue-3-4",
+        "label": "高等数学Ⅱ",
+        "startTime": "2026-05-22T09:55:00+08:00",
+        "endTime": "2026-05-22T11:30:00+08:00",
+        "source": "class",
+        "metadata": {
+          "teacher": "洪莉",
+          "location": "实C213",
+          "raw": "07010013-高等数学Ⅱ[01] / 洪莉 / 1-17周(单),星期5,3-4节,实C213"
+        }
+      },
+      {
+        "id": "class-2026-05-22-sixiangdaode-7-9",
+        "label": "思想道德与法治",
+        "startTime": "2026-05-22T15:25:00+08:00",
+        "endTime": "2026-05-22T17:50:00+08:00",
+        "source": "class",
+        "metadata": {
+          "teacher": "张冉妮",
+          "location": "教404",
+          "raw": "01010037-思想道德与法治[29] / 张冉妮 / 1-17周,星期5,7-9节,教404"
+        }
+      },
+      {
+        "id": "class-2026-05-22-dianlufenxi-11-13",
+        "label": "电路分析Ⅰ",
+        "startTime": "2026-05-22T19:20:00+08:00",
+        "endTime": "2026-05-22T21:45:00+08:00",
+        "source": "class",
+        "metadata": {
+          "teacher": "李伟华",
+          "location": "实C302",
+          "raw": "08063152-电路分析Ⅰ[02] / 李伟华 / 13-17周,星期5,11-13节,实C302"
+        }
+      },
+      {
+        "id": "temp-2026-05-22-meeting-0800-0900",
+        "label": "开会",
+        "startTime": "2026-05-22T08:00:00+08:00",
+        "endTime": "2026-05-22T09:00:00+08:00",
+        "source": "temporary",
+        "metadata": {
+          "addedFor": "MVP mock data requirement"
+        }
+      }
+    ]
+  },
+  "reminderItems": [
+    {
+      "id": "item-fqemb",
+      "label": "FQEmb 实验推进",
+      "defaultDurationMinutes": 45,
+      "active": true,
+      "importanceScore": 1560,
+      "confidence": 0.35,
+      "lastComparedAt": "2026-05-21T20:00:00+08:00",
+      "lastScheduledAt": null,
+      "lastTouchedAt": null
+    },
+    {
+      "id": "item-circuit-review",
+      "label": "电路分析复习",
+      "defaultDurationMinutes": 30,
+      "active": true,
+      "importanceScore": 1510,
+      "confidence": 0.25,
+      "lastComparedAt": "2026-05-21T20:05:00+08:00",
+      "lastScheduledAt": null,
+      "lastTouchedAt": null
+    },
+    {
+      "id": "item-math-exercises",
+      "label": "高数习题",
+      "defaultDurationMinutes": 30,
+      "active": true,
+      "importanceScore": 1490,
+      "confidence": 0.2,
+      "lastComparedAt": "2026-05-21T20:08:00+08:00",
+      "lastScheduledAt": null,
+      "lastTouchedAt": null
+    },
+    {
+      "id": "item-reading",
+      "label": "阅读笔记",
+      "defaultDurationMinutes": 30,
+      "active": true,
+      "importanceScore": 1450,
+      "confidence": 0.15,
+      "lastComparedAt": null,
+      "lastScheduledAt": null,
+      "lastTouchedAt": null
+    },
+    {
+      "id": "item-workout",
+      "label": "训练",
+      "defaultDurationMinutes": 30,
+      "active": true,
+      "importanceScore": 1425,
+      "confidence": 0.1,
+      "lastComparedAt": null,
+      "lastScheduledAt": null,
+      "lastTouchedAt": null
+    }
+  ],
+  "comparisonHistory": [
+    {
+      "at": "2026-05-21T20:00:00+08:00",
+      "leftItemId": "item-fqemb",
+      "rightItemId": "item-reading",
+      "choice": "left",
+      "prompt": "第一印象：哪个更重要？"
+    },
+    {
+      "at": "2026-05-21T20:05:00+08:00",
+      "leftItemId": "item-circuit-review",
+      "rightItemId": "item-workout",
+      "choice": "left",
+      "prompt": "第一印象：哪个更重要？"
+    },
+    {
+      "at": "2026-05-21T20:08:00+08:00",
+      "leftItemId": "item-math-exercises",
+      "rightItemId": "item-circuit-review",
+      "choice": "tie",
+      "prompt": "第一印象：哪个更重要？"
+    }
+  ],
+  "generatedTables": {
+    "2026-05-22": []
+  },
+  "settings": {
+    "dayStart": "08:00",
+    "dayEnd": "23:00",
+    "alarmSeconds": 30,
+    "clickToDismiss": true,
+    "autoStart": false,
+    "defaultReminderDurationMinutes": 30,
+    "minimumFillMinutes": 15
+  }
+}
