@@ -1,0 +1,20 @@
+{
+  "name": "tabula-rasa",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "electron src/main/main.js",
+    "view": "node scripts/generate-view.mjs",
+    "proto:fill": "node src/prototypes/free-time-engine/tui.mjs",
+    "test": "node --test"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron"
+    ]
+  },
+  "devDependencies": {
+    "electron": "^32.3.3"
+  }
+}

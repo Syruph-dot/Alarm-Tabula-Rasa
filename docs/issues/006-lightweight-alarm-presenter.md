@@ -2,6 +2,8 @@
 
 **Type**: AFK
 
+**Status**: Implemented in MVP slice
+
 **Blocked by**: 003 - Build Dynamic Free-Time Fill Engine
 
 **User stories covered**: 10, 11, 12
@@ -12,12 +14,19 @@ Add the end-to-end alarm path for soft-fill blocks. When a generated block ends,
 
 ## Acceptance criteria
 
-- [ ] Scheduler can identify the next alarm from generated soft-fill blocks.
-- [ ] Fullscreen alarm shows the next item label and countdown.
-- [ ] Click-to-dismiss works when enabled.
-- [ ] Auto-dismiss works after the configured countdown.
-- [ ] Alarm does not show extend, skip, or reschedule controls.
-- [ ] Tests cover alarm state transitions and next-alarm selection.
+- [x] Scheduler can identify the next alarm from generated soft-fill blocks.
+- [x] Fullscreen alarm shows the next item label and countdown.
+- [x] Click-to-dismiss works when enabled.
+- [x] Auto-dismiss works after the configured countdown.
+- [x] Alarm does not show extend, skip, or reschedule controls.
+- [x] Tests cover alarm state transitions and next-alarm selection.
+
+## Implementation notes
+
+- Core logic lives in `src/lib/alarm-presenter.js`.
+- Main-window demo exposes `测试下一次提醒`, opening a fullscreen overlay for the next soft-fill transition.
+- Alarm overlay has only next item label and countdown. No extend, skip, or reschedule controls.
+- Click dismiss respects `settings.clickToDismiss`; auto-dismiss uses `settings.alarmSeconds`.
 
 ## Blocked by
 
