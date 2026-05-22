@@ -55,8 +55,19 @@ describe('electron renderers', () => {
     assert.match(html, /data-action="add-reminder"/);
     assert.match(html, /data-action="archive-reminder"/);
     assert.match(html, /data-action="add-fixed-event"/);
+    assert.match(html, />Add Time Block</);
+    assert.match(html, />Add time</);
     assert.match(html, /data-action="update-settings"/);
     assert.match(html, /data-action="set-time-mode"/);
+    assert.match(html, /Course Table Import/);
+    assert.match(html, /data-action="import-course-table"/);
+    assert.match(html, /data-action="clear-course-table"/);
+    assert.match(html, /id="courseTableJson"/);
+    assert.match(html, /id="courseTablePrompt"/);
+    assert.match(html, /Copy prompt/);
+    assert.match(html, /course-table-v1/);
+    assert.doesNotMatch(html, />Add Fixed Event</);
+    assert.doesNotMatch(html, />Add fixed</);
     assert.doesNotMatch(html, /score 1500/);
     assert.doesNotMatch(html, /C:\/Users\/me\/AppData\/Roaming\/TabulaRasa\/data\.json/);
   });
@@ -67,6 +78,7 @@ describe('electron renderers', () => {
     assert.match(html, /data-action="resolve-preference"/);
     assert.match(html, /data-action="quick-temp"/);
     assert.match(html, /data-action="end-current"/);
+    assert.match(html, /data-action="adjust-current-end"/);
     assert.match(html, /data-action="add-break"/);
     assert.match(html, /休息30m/);
     assert.match(html, /data-action="toggle-pause"/);
@@ -105,6 +117,39 @@ describe('electron renderers', () => {
     assert.doesNotMatch(html, /importanceScore/);
   });
 
+  it('shows an active fixed event in the quick panel with end and cancel actions', () => {
+    const html = renderTrayWidgetHtml({
+      ...view,
+      now: new Date('2026-05-22T10:15:00+08:00'),
+      softFillBlocks: [],
+      fixedEvents: [
+        {
+          id: 'class-1',
+          label: 'Class block',
+          startTime: '2026-05-22T10:00:00+08:00',
+          endTime: '2026-05-22T11:00:00+08:00',
+          source: 'course-import',
+        },
+        {
+          id: 'office-1',
+          label: 'Office hours',
+          startTime: '2026-05-22T11:30:00+08:00',
+          endTime: '2026-05-22T12:00:00+08:00',
+          source: 'fixed',
+        },
+      ],
+    }, { message: 'Ready' });
+
+    assert.match(html, /Class block/);
+    assert.match(html, /10:00-11:00/);
+    assert.match(html, /Office hours/);
+    assert.match(html, /data-action="adjust-fixed-event-end"/);
+    assert.match(html, /data-action="end-fixed-event"/);
+    assert.match(html, /data-action="cancel-fixed-event"/);
+    assert.doesNotMatch(html, /No active block/);
+    assert.doesNotMatch(html, /data-action="end-current"/);
+  });
+
   it('marks day plan blocks as past, current, or future relative to now', () => {
     const html = renderMainHtml({
       ...view,
@@ -140,5 +185,38 @@ describe('electron renderers', () => {
     assert.match(html, /class="block past"[\s\S]*Past block/);
     assert.match(html, /class="block current"[\s\S]*Current block/);
     assert.match(html, /class="block future"[\s\S]*Future block/);
+  });
+
+  it('merges fixed time into the day plan without a separate fixed-events section or hard color class', () => {
+    const html = renderMainHtml({
+      ...view,
+      now: new Date('2026-05-22T08:10:00+08:00'),
+      fixedEvents: [
+        {
+          id: 'class-1',
+          label: 'Class block',
+          startTime: '2026-05-22T10:00:00+08:00',
+          endTime: '2026-05-22T11:00:00+08:00',
+          source: 'class',
+        },
+      ],
+      softFillBlocks: [
+        {
+          itemId: 'a',
+          label: 'Task A',
+          start: new Date('2026-05-22T08:00:00+08:00'),
+          end: new Date('2026-05-22T08:30:00+08:00'),
+          durationMinutes: 30,
+        },
+      ],
+    });
+
+    assert.ok(html.indexOf('Task A') < html.indexOf('Class block'));
+    assert.doesNotMatch(html, />Fixed Events</);
+    assert.doesNotMatch(html, />Add Fixed Event</);
+    assert.doesNotMatch(html, /class="block hard"/);
+    assert.doesNotMatch(html, /\.block\.hard/);
+    assert.doesNotMatch(html, />class</);
+    assert.doesNotMatch(html, />Scheduled</);
   });
 });

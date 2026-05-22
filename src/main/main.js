@@ -5,9 +5,12 @@ import {
   archiveReminderItem,
   addFixedEvent,
   addReminderItem,
+  adjustFixedEventEnd,
+  cancelFixedEvent,
   ensureAppStore,
   getDefaultStorePath,
   saveAppStore,
+  updateFixedEventEnd,
   updateSettings,
 } from '../lib/app-store.js';
 import {
@@ -23,8 +26,14 @@ import {
 import {
   createAlarmState,
   renderAlarmHtml,
+  shouldRenderAlarmFrame,
   tickAlarm,
 } from '../lib/alarm-presenter.js';
+import {
+  clearImportedCourseTable,
+  importCourseTableJson,
+} from '../lib/course-table-import.js';
+import { createAlarmWindowOptions } from './alarm-window.js';
 import { createTrayShellState, getTrayMenuTemplate, updateTrayShellState } from '../lib/tray-shell.js';
 import { renderMainHtml, renderTrayWidgetHtml } from './renderers.js';
 
@@ -32,8 +41,8 @@ const require = createRequire(import.meta.url);
 const electron = require('electron');
 const { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, screen } = electron;
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const iconPath = resolve(__dirname, '..', '..', 'icon_64.png');
 const samplePath = resolve(__dirname, '..', '..', 'docs', 'sample-data', 'free-time-sample-2026-05-22.json');
-const trayIconDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAKklEQVR42mNgGAWjYBSMglEwCkbBKBhFowAMDAz8T4oBqQYDqBqADwAAAP//AwA6GQIiH4qvTAAAAABJRU5ErkJggg==';
 
 if (process.env.TABULA_RASA_USER_DATA_DIR) {
   app.setPath('userData', process.env.TABULA_RASA_USER_DATA_DIR);
@@ -162,7 +171,7 @@ function toggleTrayWidget(message) {
 }
 
 function createTray() {
-  tray = new Tray(nativeImage.createFromDataURL(trayIconDataUrl));
+  tray = new Tray(nativeImage.createFromPath(iconPath));
   tray.on('click', () => toggleTrayWidget());
   refreshTrayMenu();
 }
@@ -211,6 +220,19 @@ function closeAlarm(action = 'dismiss') {
   alarmState = null;
 }
 
+function requestAlarmDismiss(action = 'dismiss') {
+  if (!alarmState) return;
+  const previousState = alarmState;
+  alarmState = tickAlarm(alarmState, { event: 'click', action });
+  if (alarmState.status === 'dismissed') {
+    closeAlarm(alarmState.dismissedBy ?? action);
+    return;
+  }
+  if (alarmWindow && !alarmWindow.isDestroyed() && shouldRenderAlarmFrame(previousState, alarmState)) {
+    alarmWindow.loadURL(htmlUrl(renderAlarmHtml(alarmState)));
+  }
+}
+
 function showAlarm(alarm) {
   if (!alarm) return;
   if (alarmWindow && !alarmWindow.isDestroyed()) return;
@@ -222,16 +244,8 @@ function showAlarm(alarm) {
     clickToDismiss: view.settings.clickToDismiss !== false,
   });
 
-  alarmWindow = new BrowserWindow({
-    fullscreen: true,
-    frame: false,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
-    },
-  });
+  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+  alarmWindow = new BrowserWindow(createAlarmWindowOptions(display));
   alarmWindow.loadURL(htmlUrl(renderAlarmHtml(alarmState)));
   alarmWindow.webContents.on('did-finish-load', () => {
     alarmWindow.webContents.executeJavaScript(`
@@ -244,12 +258,13 @@ function showAlarm(alarm) {
 
   alarmTimer = setInterval(() => {
     if (!alarmState) return;
+    const previousState = alarmState;
     alarmState = tickAlarm(alarmState);
     if (alarmState.status === 'dismissed') {
       closeAlarm(alarmState.dismissedBy ?? 'auto');
       return;
     }
-    if (alarmWindow && !alarmWindow.isDestroyed()) {
+    if (alarmWindow && !alarmWindow.isDestroyed() && shouldRenderAlarmFrame(previousState, alarmState)) {
       alarmWindow.loadURL(htmlUrl(renderAlarmHtml(alarmState)));
     }
   }, 1000);
@@ -303,6 +318,24 @@ function registerIpc() {
     safeSendReload();
   });
 
+  ipcMain.on('import-course-table', async (_event, input = {}) => {
+    try {
+      const result = importCourseTableJson(store, input.json ?? '');
+      await persist(result.store);
+      safeSendReload();
+      renderMain(`Imported ${result.importedCount} course blocks.`);
+    } catch (error) {
+      renderMain(`Import failed: ${error.message}`);
+    }
+  });
+
+  ipcMain.on('clear-course-table', async () => {
+    const result = clearImportedCourseTable(store);
+    await persist(result.store);
+    safeSendReload();
+    renderMain(`Cleared ${result.removedCount} imported course blocks.`);
+  });
+
   ipcMain.on('add-temporary-event', async (_event, input) => {
     const result = addTemporaryEventToStore(store, { ...input, now: currentView().now });
     await applyRuntimeResult(result, 'Temporary event added.');
@@ -327,6 +360,46 @@ function registerIpc() {
     await applyRuntimeResult(result, result.changed ? 'Current block ended.' : 'No block to end.');
   });
 
+  ipcMain.on('end-fixed-event', async (_event, input = {}) => {
+    try {
+      await persist(updateFixedEventEnd(store, { eventId: input.eventId, endTime: currentView().now }));
+      safeSendReload();
+      renderMain('Fixed block ended.');
+      renderTrayWidget('Fixed block ended.');
+    } catch (error) {
+      renderMain(`Could not end fixed block: ${error.message}`);
+      renderTrayWidget(`Could not end fixed block: ${error.message}`);
+    }
+  });
+
+  ipcMain.on('adjust-fixed-event-end', async (_event, input = {}) => {
+    try {
+      await persist(adjustFixedEventEnd(store, {
+        eventId: input.eventId,
+        deltaMinutes: Number(input.deltaMinutes),
+        now: currentView().now,
+      }));
+      safeSendReload();
+      renderMain(input.deltaMinutes < 0 ? 'Fixed block shortened.' : 'Fixed block extended.');
+      renderTrayWidget(input.deltaMinutes < 0 ? 'Fixed block shortened.' : 'Fixed block extended.');
+    } catch (error) {
+      renderMain(`Could not adjust fixed block: ${error.message}`);
+      renderTrayWidget(`Could not adjust fixed block: ${error.message}`);
+    }
+  });
+
+  ipcMain.on('cancel-fixed-event', async (_event, input = {}) => {
+    try {
+      await persist(cancelFixedEvent(store, input.eventId));
+      safeSendReload();
+      renderMain('Fixed block cancelled.');
+      renderTrayWidget('Fixed block cancelled.');
+    } catch (error) {
+      renderMain(`Could not cancel fixed block: ${error.message}`);
+      renderTrayWidget(`Could not cancel fixed block: ${error.message}`);
+    }
+  });
+
   ipcMain.on('add-break', async (_event, input) => {
     const result = addBreakToStore(store, { ...input, now: currentView().now });
     await applyRuntimeResult(result, result.changed ? 'Break added.' : 'No room for break.');
@@ -337,7 +410,7 @@ function registerIpc() {
   });
 
   ipcMain.on('dismiss-alarm', (_event, input = {}) => {
-    closeAlarm(input.action ?? 'dismiss');
+    requestAlarmDismiss(input.action ?? 'dismiss');
   });
 }
 

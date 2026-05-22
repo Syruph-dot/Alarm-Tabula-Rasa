@@ -183,3 +183,71 @@ export function addFixedEvent(store, input) {
     },
   });
 }
+
+export function updateFixedEventEnd(store, input = {}) {
+  const eventId = String(input.eventId ?? '').trim();
+  if (!eventId) throw new Error('eventId is required');
+  const rawEndTime = input.endTime ?? input.now;
+  if (!rawEndTime) throw new Error('endTime is required');
+  const end = rawEndTime instanceof Date ? rawEndTime : new Date(rawEndTime);
+  if (Number.isNaN(end.getTime())) throw new Error('endTime is invalid');
+
+  let found = false;
+  const fixedEvents = Object.fromEntries(Object.entries(store.fixedEvents ?? {}).map(([date, events]) => {
+    const dayEvents = (events ?? []).map(event => {
+      if (event.id !== eventId) return event;
+      found = true;
+      const start = new Date(event.startTime);
+      if (end <= start) throw new Error('fixed event must end after it starts');
+      return {
+        ...event,
+        endTime: formatLocalDateTime(end),
+      };
+    }).sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+    return [date, dayEvents];
+  }));
+
+  if (!found) throw new Error('fixed event not found');
+  return normalizeStore({ ...store, fixedEvents });
+}
+
+export function adjustFixedEventEnd(store, input = {}) {
+  const eventId = String(input.eventId ?? '').trim();
+  if (!eventId) throw new Error('eventId is required');
+  const deltaMinutes = Number(input.deltaMinutes ?? 0);
+  if (!Number.isFinite(deltaMinutes) || deltaMinutes === 0) throw new Error('deltaMinutes is required');
+
+  const now = input.now ? new Date(input.now) : null;
+  let eventToUpdate = null;
+  for (const events of Object.values(store.fixedEvents ?? {})) {
+    eventToUpdate = (events ?? []).find(event => event.id === eventId);
+    if (eventToUpdate) break;
+  }
+  if (!eventToUpdate) throw new Error('fixed event not found');
+
+  const requestedEnd = new Date(new Date(eventToUpdate.endTime).getTime() + deltaMinutes * 60000);
+  const minEnd = now && requestedEnd < now ? now : requestedEnd;
+  return updateFixedEventEnd(store, {
+    eventId,
+    endTime: minEnd,
+  });
+}
+
+export function cancelFixedEvent(store, input) {
+  const eventId = String(typeof input === 'object' ? input?.eventId : input ?? '').trim();
+  if (!eventId) throw new Error('eventId is required');
+
+  let found = false;
+  const fixedEvents = {};
+  for (const [date, events] of Object.entries(store.fixedEvents ?? {})) {
+    const remaining = (events ?? []).filter(event => {
+      if (event.id !== eventId) return true;
+      found = true;
+      return false;
+    });
+    if (remaining.length > 0) fixedEvents[date] = remaining;
+  }
+
+  if (!found) throw new Error('fixed event not found');
+  return normalizeStore({ ...store, fixedEvents });
+}

@@ -1,3 +1,5 @@
 node_modules
 .tmp*
 .tabula-rasa-user-data
+icon.png
+icon_*.png

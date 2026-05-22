@@ -1,3 +1,8 @@
+import {
+  COURSE_TABLE_AI_PROMPT,
+  COURSE_TABLE_SCHEMA_ID,
+} from '../lib/course-table-import.js';
+
 function esc(value) {
   return String(value ?? '')
     .replaceAll('&', '&amp;')
@@ -5,6 +10,10 @@ function esc(value) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
+}
+
+function jsValue(value) {
+  return esc(JSON.stringify(value ?? ''));
 }
 
 function isoLocalInput(date) {
@@ -37,14 +46,43 @@ function blockTimeState(block, now) {
   return 'future';
 }
 
-function currentSoftBlock(blocks = [], now = null) {
+function currentDayPlanBlock(blocks = [], now = null) {
   return blocks.find(block => blockTimeState(block, now) === 'current') ?? null;
 }
 
-function nextSoftBlock(blocks = [], now = null) {
+function nextDayPlanBlock(blocks = [], now = null) {
   if (!now) return blocks[0] ?? null;
   const currentNow = now instanceof Date ? now : new Date(now);
   return blocks.find(block => block?.start && new Date(block.start) > currentNow) ?? null;
+}
+
+function planBlockFromSoft(block) {
+  return {
+    start: block.start,
+    end: block.end,
+    label: block.label,
+    durationMinutes: block.durationMinutes ?? durationMinutes(block.start, block.end),
+    break: block.break,
+    source: 'soft',
+  };
+}
+
+function planBlockFromFixed(event) {
+  return {
+    fixedEventId: event.id,
+    source: event.source ?? 'fixed',
+    start: event.startTime,
+    end: event.endTime,
+    label: event.label,
+    durationMinutes: durationMinutes(event.startTime, event.endTime),
+  };
+}
+
+function combinedDayPlanBlocks(view) {
+  return [
+    ...(view.softFillBlocks ?? []).map(planBlockFromSoft),
+    ...(view.fixedEvents ?? []).map(planBlockFromFixed),
+  ].sort((a, b) => new Date(a.start) - new Date(b.start));
 }
 
 function shell({ title, body, script = '', compact = false }) {
@@ -65,6 +103,7 @@ function shell({ title, body, script = '', compact = false }) {
     button { border: 1px solid #384353; background: #202832; color: #f4f7fb; border-radius: 6px; padding: 7px 10px; cursor: pointer; }
     button:hover { background: #2a3442; border-color: #6a7a90; }
     input, select { width: 100%; border: 1px solid #384353; background: #151b22; color: #f4f7fb; border-radius: 6px; padding: 7px 8px; }
+    textarea { width: 100%; min-height: 132px; resize: vertical; border: 1px solid #384353; background: #151b22; color: #f4f7fb; border-radius: 6px; padding: 8px; font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; line-height: 1.45; }
     label { display: grid; gap: 4px; color: #b8c1ce; font-size: 12px; }
     .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
     .meta { color: #96a1ae; font-size: 12px; line-height: 1.5; }
@@ -81,8 +120,7 @@ function shell({ title, body, script = '', compact = false }) {
     .hero-status { display: grid; gap: 8px; padding: 12px; border-radius: 8px; background: #141a21; border: 1px solid #2c3744; margin-bottom: 10px; }
     .hero-status strong { font-size: 16px; }
     .timeline { display: grid; gap: 6px; }
-    .block { display: grid; grid-template-columns: 84px 1fr auto; gap: 8px; align-items: center; padding: 8px; border-radius: 6px; background: #18202a; border-left: 3px solid #657385; }
-    .block.hard { background: #191d30; border-left-color: #7886ff; }
+    .block { display: grid; grid-template-columns: 84px 1fr; gap: 8px; align-items: center; padding: 8px; border-radius: 6px; background: #18202a; border-left: 3px solid #657385; }
     .block.break { background: #272318; border-left-color: #d5ad4c; }
     .block.past { background: #23272d; border-left-color: #7a828c; color: #b8c1cb; }
     .block.current { background: #152019; border-left-color: #65c38f; color: #f0fff4; }
@@ -113,31 +151,18 @@ ${script}
 </html>`;
 }
 
-function renderSoftBlocks(blocks = [], now = null) {
-  if (blocks.length === 0) return '<div class="muted">No generated blocks.</div>';
+function renderDayPlanBlocks(blocks = [], now = null) {
+  if (blocks.length === 0) return '<div class="muted">No blocks for this day.</div>';
   return blocks.map(block => {
     const classes = ['block', blockTimeState(block, now)];
     if (block.break) classes.push('break');
-    const kind = block.break ? 'Rest' : 'Plan';
     return `
     <div class="${classes.join(' ')}">
       <strong>${time(block.start)}-${time(block.end)}</strong>
       <span>${esc(block.label)} <small class="muted">${block.durationMinutes ?? durationMinutes(block.start, block.end)}m</small></span>
-      <small class="muted">${kind}</small>
     </div>
   `;
   }).join('');
-}
-
-function renderHardEvents(events = []) {
-  if (events.length === 0) return '<div class="muted">No fixed events for this day.</div>';
-  return events.map(event => `
-    <div class="block hard">
-      <strong>${time(event.startTime)}-${time(event.endTime)}</strong>
-      <span>${esc(event.label)}</span>
-      <small class="muted">${esc(event.source)}</small>
-    </div>
-  `).join('');
 }
 
 function renderReminderItems(items = []) {
@@ -164,7 +189,26 @@ function renderBlockSummary(block, fallback) {
   `;
 }
 
+function renderCurrentActions(current) {
+  if (current?.fixedEventId) {
+    return `
+        <button data-action="adjust-fixed-event-end" onclick="send('adjust-fixed-event-end', { eventId: ${jsValue(current.fixedEventId)}, deltaMinutes: -15 })">End -15m</button>
+        <button data-action="adjust-fixed-event-end" onclick="send('adjust-fixed-event-end', { eventId: ${jsValue(current.fixedEventId)}, deltaMinutes: 15 })">End +15m</button>
+        <button class="wide" data-action="end-fixed-event" onclick="send('end-fixed-event', { eventId: ${jsValue(current.fixedEventId)} })">End now</button>
+        <button class="wide" data-action="cancel-fixed-event" onclick="send('cancel-fixed-event', { eventId: ${jsValue(current.fixedEventId)} })">Cancel block</button>
+    `;
+  }
+  return `
+        <button data-action="adjust-current-end" onclick="send('end-current', { move: -15 })">End -15m</button>
+        <button data-action="adjust-current-end" onclick="send('extend-current', { extraMinutes: 15 })">End +15m</button>
+        <button data-action="add-break" onclick="send('add-break', { minutes: 15 })">休息15m</button>
+        <button data-action="add-break" onclick="send('add-break', { minutes: 30 })">休息30m</button>
+        <button class="wide" data-action="end-current" onclick="send('end-current', { move: 'now' })">Stop current</button>
+  `;
+}
+
 export function renderMainHtml(view, options = {}) {
+  const dayPlanBlocks = combinedDayPlanBlocks(view);
   const body = `<main>
     <div class="top">
       <div>
@@ -181,11 +225,7 @@ export function renderMainHtml(view, options = {}) {
     <div class="grid">
       <section class="panel">
         <h2>Day Plan</h2>
-        <div class="timeline">${renderSoftBlocks(view.softFillBlocks, view.now)}</div>
-        <div class="section">
-          <h2>Fixed Events</h2>
-          <div class="timeline">${renderHardEvents(view.fixedEvents)}</div>
-        </div>
+        <div class="timeline">${renderDayPlanBlocks(dayPlanBlocks, view.now)}</div>
       </section>
       <aside>
         <section class="panel">
@@ -212,15 +252,28 @@ export function renderMainHtml(view, options = {}) {
           <div class="list section">${renderReminderItems(view.reminderItems)}</div>
         </section>
         <section class="panel section">
-          <h2>Add Fixed Event</h2>
+          <h2>Course Table Import</h2>
+          <label>AI prompt<textarea id="courseTablePrompt" readonly>${esc(COURSE_TABLE_AI_PROMPT)}</textarea></label>
+          <div class="row section">
+            <button onclick="copyText('courseTablePrompt')">Copy prompt</button>
+            <span class="muted">Schema: ${esc(COURSE_TABLE_SCHEMA_ID)}</span>
+          </div>
+          <label class="section">Generated JSON<textarea id="courseTableJson" placeholder="{ &quot;schema&quot;: &quot;${esc(COURSE_TABLE_SCHEMA_ID)}&quot;, &quot;timezone&quot;: &quot;+08:00&quot;, &quot;events&quot;: [] }"></textarea></label>
+          <div class="row section">
+            <button data-action="import-course-table" onclick="send('import-course-table', { json: byId('courseTableJson').value })">Import JSON</button>
+            <button data-action="clear-course-table" onclick="send('clear-course-table')">Clear imported courses</button>
+          </div>
+        </section>
+        <section class="panel section">
+          <h2>Add Time Block</h2>
           <div class="fields">
-            <label>Name<input id="fixedLabel" placeholder="Class / event"></label>
+            <label>Name<input id="fixedLabel" placeholder="Class / meeting"></label>
             <label>Date<input id="fixedDate" value="${esc(view.date)}"></label>
             <label>Start<input id="fixedStart" value="${esc(time(view.now))}"></label>
             <label>Minutes<input id="fixedDuration" type="number" value="60"></label>
           </div>
           <div class="row section">
-            <button data-action="add-fixed-event" onclick="send('add-fixed-event', { label: byId('fixedLabel').value, date: byId('fixedDate').value, startTime: byId('fixedStart').value, durationMinutes: Number(byId('fixedDuration').value), source: 'fixed' })">Add fixed</button>
+            <button data-action="add-fixed-event" onclick="send('add-fixed-event', { label: byId('fixedLabel').value, date: byId('fixedDate').value, startTime: byId('fixedStart').value, durationMinutes: Number(byId('fixedDuration').value), source: 'fixed' })">Add time</button>
           </div>
         </section>
       </aside>
@@ -233,6 +286,12 @@ export function renderMainHtml(view, options = {}) {
 function localToIso(value) {
   if (!value) return null;
   return new Date(value).toISOString();
+}
+function copyText(id) {
+  const element = byId(id);
+  if (!element) return;
+  element.select();
+  document.execCommand('copy');
 }
 `,
   });
@@ -250,8 +309,9 @@ export function renderTrayWidgetHtml(view, options = {}) {
       <button data-action="resolve-preference" onclick="send('resolve-preference', { leftItemId: '${esc(pair.left.id)}', rightItemId: '${esc(pair.right.id)}', choice: 'skip' })">Skip</button>
     </div>
   ` : '<div class="muted">Need at least two active items.</div>';
-  const current = currentSoftBlock(view.softFillBlocks, view.now);
-  const next = nextSoftBlock(view.softFillBlocks, view.now);
+  const dayPlanBlocks = combinedDayPlanBlocks(view);
+  const current = currentDayPlanBlock(dayPlanBlocks, view.now);
+  const next = nextDayPlanBlock(dayPlanBlocks, view.now);
 
   const body = `<main>
     <div class="top">
@@ -272,9 +332,7 @@ export function renderTrayWidgetHtml(view, options = {}) {
         <div class="meta">${current ? `${time(current.start)}-${time(current.end)}` : 'Nothing scheduled right now'}</div>
       </div>
       <div class="primary-actions">
-        <button data-action="add-break" onclick="send('add-break', { minutes: 15 })">休息15m</button>
-        <button data-action="add-break" onclick="send('add-break', { minutes: 30 })">休息30m</button>
-        <button class="wide" data-action="end-current" onclick="send('end-current', { move: 'now' })">Stop current</button>
+${renderCurrentActions(current)}
       </div>
     </section>
     <section class="panel section">

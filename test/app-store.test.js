@@ -5,12 +5,19 @@ import { join } from 'node:path';
 import {
   addFixedEvent,
   addReminderItem,
+  adjustFixedEventEnd,
   archiveReminderItem,
+  cancelFixedEvent,
   ensureAppStore,
   loadAppStore,
   saveAppStore,
+  updateFixedEventEnd,
   updateSettings,
 } from '../src/lib/app-store.js';
+import {
+  COURSE_TABLE_SCHEMA_ID,
+  importCourseTableJson,
+} from '../src/lib/course-table-import.js';
 
 async function tempDir() {
   const root = join(process.cwd(), '.tmp-tests');
@@ -94,5 +101,127 @@ describe('app store', () => {
     assert.equal(withEvent.fixedEvents['2026-05-22'][0].endTime, '2026-05-22T08:45:00+08:00');
     assert.equal(archived.reminderItems[0].active, false);
     assert.ok(archived.reminderItems[0].archivedAt);
+  });
+
+  it('updates fixed event end time and cancels fixed events immutably', () => {
+    const store = {
+      version: 1,
+      fixedEvents: {
+        '2026-05-22': [
+          {
+            id: 'class-1',
+            label: 'Class',
+            startTime: '2026-05-22T10:00:00+08:00',
+            endTime: '2026-05-22T11:00:00+08:00',
+            source: 'course-import',
+            metadata: {},
+          },
+          {
+            id: 'meeting-1',
+            label: 'Meeting',
+            startTime: '2026-05-22T12:00:00+08:00',
+            endTime: '2026-05-22T12:30:00+08:00',
+            source: 'fixed',
+            metadata: {},
+          },
+        ],
+      },
+      reminderItems: [],
+      comparisonHistory: [],
+      generatedTables: {},
+      settings: {},
+      runtime: { timeMode: 'real', paused: false, itemCooldowns: [] },
+    };
+
+    const ended = updateFixedEventEnd(store, {
+      eventId: 'class-1',
+      endTime: new Date('2026-05-22T10:25:00+08:00'),
+    });
+    const cancelled = cancelFixedEvent(ended, 'class-1');
+
+    assert.notEqual(ended, store);
+    assert.equal(
+      ended.fixedEvents['2026-05-22'].find(event => event.id === 'class-1').endTime,
+      '2026-05-22T10:25:00+08:00',
+    );
+    assert.equal(store.fixedEvents['2026-05-22'][0].endTime, '2026-05-22T11:00:00+08:00');
+    assert.equal(cancelled.fixedEvents['2026-05-22'].some(event => event.id === 'class-1'), false);
+    assert.equal(cancelled.fixedEvents['2026-05-22'].some(event => event.id === 'meeting-1'), true);
+  });
+
+  it('moves fixed event end time by 15 minutes without moving it before now', () => {
+    const store = {
+      version: 1,
+      fixedEvents: {
+        '2026-05-22': [
+          {
+            id: 'class-1',
+            label: 'Class',
+            startTime: '2026-05-22T10:00:00+08:00',
+            endTime: '2026-05-22T11:00:00+08:00',
+            source: 'course-import',
+          },
+        ],
+      },
+      reminderItems: [],
+      comparisonHistory: [],
+      generatedTables: {},
+      settings: {},
+      runtime: { timeMode: 'real', paused: false, itemCooldowns: [] },
+    };
+
+    const extended = adjustFixedEventEnd(store, {
+      eventId: 'class-1',
+      deltaMinutes: 15,
+      now: new Date('2026-05-22T10:15:00+08:00'),
+    });
+    const shortened = adjustFixedEventEnd(extended, {
+      eventId: 'class-1',
+      deltaMinutes: -15,
+      now: new Date('2026-05-22T11:10:00+08:00'),
+    });
+
+    assert.equal(
+      extended.fixedEvents['2026-05-22'][0].endTime,
+      '2026-05-22T11:15:00+08:00',
+    );
+    assert.equal(
+      shortened.fixedEvents['2026-05-22'][0].endTime,
+      '2026-05-22T11:10:00+08:00',
+    );
+  });
+
+  it('persists imported course table blocks through the app store', async () => {
+    const dir = await tempDir();
+    try {
+      const storePath = join(dir, 'data.json');
+      const store = await ensureAppStore({
+        userDataPath: dir,
+        samplePath: './docs/sample-data/free-time-sample-2026-05-22.json',
+      });
+      const imported = importCourseTableJson(store, JSON.stringify({
+        schema: COURSE_TABLE_SCHEMA_ID,
+        timezone: '+08:00',
+        events: [
+          {
+            date: '2026-05-22',
+            title: '信号与系统',
+            startTime: '13:30',
+            endTime: '15:05',
+            location: 'A101',
+          },
+        ],
+      })).store;
+
+      await saveAppStore(storePath, imported);
+      const reloaded = await loadAppStore(storePath);
+
+      assert.ok(reloaded.fixedEvents['2026-05-22'].some(event => (
+        event.source === 'course-import'
+        && event.label === '信号与系统 @ A101'
+      )));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
