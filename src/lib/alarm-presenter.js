@@ -1,11 +1,36 @@
 export function getNextAlarm(blocks, now) {
+  const currentNow = new Date(now);
   const sorted = blocks
-    .filter(block => block?.start && block?.end && block.end >= now)
+    .filter(block => block?.start && block?.end && block.end >= currentNow)
     .sort((a, b) => a.end - b.end);
 
   for (const block of sorted) {
     const nextBlock = sorted.find(candidate => candidate.start >= block.end && candidate.itemId !== block.itemId);
-    if (block.end >= now && nextBlock) {
+    if (block.end >= currentNow && nextBlock) {
+      return {
+        triggerAt: new Date(block.end),
+        label: nextBlock.label,
+        nextBlock,
+        endingBlock: block,
+      };
+    }
+  }
+
+  return null;
+}
+
+export function getDueAlarm(blocks, now, lookbackMs = 30000) {
+  const currentNow = new Date(now);
+  const earliest = new Date(currentNow.getTime() - lookbackMs);
+  const sorted = blocks
+    .filter(block => block?.start && block?.end && block.end >= earliest && block.end <= currentNow)
+    .sort((a, b) => a.end - b.end);
+
+  for (const block of sorted) {
+    const nextBlock = blocks
+      .filter(candidate => candidate?.start && candidate?.end && candidate.start >= block.end && candidate.itemId !== block.itemId)
+      .sort((a, b) => a.start - b.start)[0];
+    if (nextBlock) {
       return {
         triggerAt: new Date(block.end),
         label: nextBlock.label,

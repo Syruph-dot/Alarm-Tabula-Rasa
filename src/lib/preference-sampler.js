@@ -1,6 +1,6 @@
 export const PREFERENCE_PROMPT = '第一印象：哪个更重要？';
 
-const K = 32;
+const K = 160;
 
 function pairKey(a, b) {
   return [a, b].sort().join('::');
