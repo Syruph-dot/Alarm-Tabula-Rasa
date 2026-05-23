@@ -32,4 +32,22 @@ describe('electron bootstrap', () => {
     assert.match(source, /clearUserLocksInStore/);
     assert.match(source, /ipcMain\.on\('clear-user-locks'/);
   });
+
+  it('wires reminder:create and reminder:edit IPC handlers', async () => {
+    const source = await readFile('./src/main/main.js', 'utf-8');
+
+    assert.match(source, /ipcMain\.on\('reminder:create'/);
+    assert.match(source, /ipcMain\.on\('reminder:edit'/);
+    assert.match(source, /createReminder\(store,/);
+    assert.match(source, /editReminder\(store,/);
+  });
+
+  it('imports checkDueReminders and calls it in the scheduler', async () => {
+    const source = await readFile('./src/main/main.js', 'utf-8');
+
+    assert.match(source, /checkDueReminders/);
+    assert.match(source, /startReminderFlow/);
+    assert.match(source, /showReminderPopup/);
+    assert.match(source, /resolveCurrentPopup/);
+  });
 });

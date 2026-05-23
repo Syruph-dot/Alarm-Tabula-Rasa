@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   renderMainHtml,
+  renderReminderPopupHtml,
   renderTrayWidgetHtml,
 } from '../src/main/renderers.js';
 
@@ -318,5 +319,122 @@ describe('electron renderers', () => {
     assert.match(html, /data-block-label="Meeting block"[\s\S]*data-block-locked="false"/);
     assert.equal((html.match(/>Locked<\/button>/g) ?? []).length, 0);
     assert.equal((html.match(/<span class="lock-mark">Locked<\/span>/g) ?? []).length, 0);
+  });
+
+  it('renames sidebar personal-project panel to 添加项目', () => {
+    const html = renderMainHtml(view);
+    assert.match(html, /添加项目/);
+    assert.doesNotMatch(html, />Add Reminder</);
+    assert.match(html, /data-action="add-personal-project"/);
+    assert.match(html, /项目名称/);
+    assert.match(html, /时长\(分\)/);
+  });
+
+  it('renders reminders tab with add form and list', () => {
+    const html = renderMainHtml(view, { page: 'reminders' });
+    assert.match(html, /添加提醒/);
+    assert.match(html, /id="reminderTitle"/);
+    assert.match(html, /id="reminderDate"/);
+    assert.match(html, /id="reminderTime"/);
+    assert.match(html, /addReminder\(\)/);
+    assert.match(html, /提醒列表/);
+    assert.match(html, /暂无提醒/);
+  });
+
+  it('renders reminder list from options', () => {
+    const reminders = [
+      { id: 'r1', title: 'Meeting', dueAt: '2026-05-24T14:00:00+08:00', status: 'scheduled' },
+      { id: 'r2', title: 'Call', dueAt: '2026-05-24T15:30:00+08:00', status: 'snoozed' },
+    ];
+    const html = renderMainHtml(view, { page: 'reminders', reminders });
+    assert.match(html, /Meeting/);
+    assert.match(html, /Call/);
+    assert.match(html, /待提醒/);
+    assert.match(html, /已推迟/);
+    assert.match(html, /编辑/);
+    assert.match(html, /归档/);
+    assert.match(html, /toggleReminderEdit/);
+    assert.match(html, /saveReminderEdit/);
+    assert.doesNotMatch(html, /暂无提醒/);
+  });
+});
+
+describe('reminder popup', () => {
+  const NOW = new Date('2026-05-24T12:00:00+08:00');
+
+  const popupView = {
+    date: '2026-05-24',
+    now: NOW,
+    timeMode: 'mock',
+    paused: false,
+    settings: {
+      dayStart: '08:00',
+      dayEnd: '23:00',
+      defaultEarlyEndCooldownMinutes: 180,
+      minimumFillMinutes: 15,
+    },
+    fixedEvents: [],
+    merged: [],
+    freeIntervals: [],
+    softFillBlocks: [
+      {
+        itemId: 'a',
+        label: 'Task A',
+        start: new Date('2026-05-24T12:00:00+08:00'),
+        end: new Date('2026-05-24T12:30:00+08:00'),
+        durationMinutes: 30,
+        score: 1500,
+      },
+    ],
+    personalProjects: [
+      { id: 'a', label: 'Task A', active: true, defaultDurationMinutes: 30, importanceScore: 1500 },
+    ],
+    comparisonHistory: [],
+    preferencePair: null,
+    courseWeeklySchedule: [],
+  };
+
+  const popupReminder = {
+    id: 'rem-test',
+    title: 'Test Reminder',
+    dueAt: '2026-05-24T12:00:00+08:00',
+    status: 'scheduled',
+  };
+
+  it('renders reminder popup HTML with title, due time, and action buttons', () => {
+    const html = renderReminderPopupHtml(popupReminder, popupView);
+    assert.match(html, />Test Reminder</);
+    assert.match(html, />12:00</);
+    assert.match(html, />Snooze</);
+    assert.match(html, />开始</);
+    assert.match(html, />删除</);
+  });
+
+  it('includes snooze presets in popup', () => {
+    const html = renderReminderPopupHtml(popupReminder, popupView);
+    for (const m of [5, 10, 15, 30, 60]) {
+      assert.match(html, new RegExp(`${m}分钟`));
+    }
+    assert.match(html, /自定义/);
+  });
+
+  it('includes start duration presets in popup', () => {
+    const html = renderReminderPopupHtml(popupReminder, popupView);
+    for (const m of [15, 30, 45, 60, 90]) {
+      assert.match(html, new RegExp(`${m}分钟`));
+    }
+  });
+
+  it('includes compact gantt chart in popup', () => {
+    const html = renderReminderPopupHtml(popupReminder, popupView);
+    assert.match(html, /class="gantt"/);
+    assert.match(html, /class="gantt-track"/);
+    assert.match(html, /class="gantt-now"/);
+    assert.match(html, /Task A/);
+  });
+
+  it('remembers reminders tab in page selector', () => {
+    const html = renderMainHtml(view);
+    assert.match(html, /tab.*提醒/);
   });
 });
