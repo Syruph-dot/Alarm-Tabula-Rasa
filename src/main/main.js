@@ -5,12 +5,18 @@ import {
   addFixedEvent,
   addPersonalProject,
   archivePersonalProject,
+  archiveReminder,
   adjustFixedEventEnd,
   cancelFixedEvent,
   clearAllData,
+  createReminder,
+  editReminder,
   ensureAppStore,
   getDefaultStorePath,
+  listReminders,
   saveAppStore,
+  snoozeReminder,
+  startReminder,
   updateFixedEventEnd,
   updateSettings,
 } from '../lib/app-store.js';
@@ -26,8 +32,15 @@ import {
   replaceBlockProjectInStore,
   resolvePreferenceInStore,
   shouldTriggerAlarm,
+  startReminderFlow,
   unlockBlockInStore,
 } from '../lib/app-runtime.js';
+import {
+  checkDueReminders,
+  computeCloseSnoozeMinutes,
+  computeSnoozeDueAt,
+  formatLocalDueAt,
+} from '../lib/reminder-runtime.js';
 import {
   createAlarmState,
   renderAlarmHtml,
@@ -40,7 +53,7 @@ import {
 } from '../lib/course-table-import.js';
 import { createAlarmWindowOptions } from './alarm-window.js';
 import { createTrayShellState, getTrayMenuTemplate, updateTrayShellState } from '../lib/tray-shell.js';
-import { renderMainHtml, renderTrayWidgetHtml } from './renderers.js';
+import { renderMainHtml, renderReminderPopupHtml, renderTrayWidgetHtml } from './renderers.js';
 
 const require = createRequire(import.meta.url);
 const electron = require('electron');
@@ -58,6 +71,8 @@ let storePath = null;
 let mainWindow = null;
 let trayWindow = null;
 let alarmWindow = null;
+let reminderWindow = null;
+let currentReminder = null;
 let tray = null;
 let shellState = createTrayShellState();
 let alarmState = null;
@@ -239,6 +254,59 @@ function requestAlarmDismiss(action = 'dismiss') {
   }
 }
 
+function createReminderWindow() {
+  reminderWindow = new BrowserWindow({
+    width: 420,
+    height: 320,
+    frame: false,
+    resizable: false,
+    show: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false,
+    },
+  });
+
+  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+  reminderWindow.on('ready-to-show', () => {
+    const bounds = reminderWindow.getBounds();
+    reminderWindow.setPosition(
+      display.x + display.width - bounds.width - 12,
+      display.y + display.height - bounds.height - 12,
+    );
+  });
+
+  reminderWindow.on('closed', () => {
+    reminderWindow = null;
+    currentReminder = null;
+  });
+}
+
+function showReminderPopup(reminder) {
+  currentReminder = reminder;
+  const view = currentView();
+  const html = renderReminderPopupHtml(reminder, view);
+  if (!reminderWindow || reminderWindow.isDestroyed()) createReminderWindow();
+  reminderWindow.loadURL(htmlUrl(html));
+  reminderWindow.show();
+}
+
+function resolveCurrentPopup() {
+  if (!store) return;
+  const view = currentView();
+  const due = checkDueReminders(store, view.now);
+  if (due.length > 0) {
+    showReminderPopup(due[0]);
+  } else {
+    currentReminder = null;
+    if (reminderWindow && !reminderWindow.isDestroyed()) {
+      reminderWindow.hide();
+    }
+  }
+}
+
 function showAlarm(alarm) {
   if (!alarm) return;
   if (alarmWindow && !alarmWindow.isDestroyed()) return;
@@ -282,10 +350,17 @@ function showAlarm(alarm) {
 function startScheduler() {
   if (schedulerTimer) clearInterval(schedulerTimer);
   schedulerTimer = setInterval(() => {
-    if (!store || alarmWindow) return;
+    if (!store || store.runtime?.paused) return;
+    if (alarmWindow) return;
     const view = currentView();
-    const due = shouldTriggerAlarm(store, view, { now: view.now });
-    if (due.shouldTrigger) showAlarm(due.alarm);
+    // Check soft-fill alarms
+    const alarmDue = shouldTriggerAlarm(store, view, { now: view.now });
+    if (alarmDue.shouldTrigger) { showAlarm(alarmDue.alarm); return; }
+    // Check due reminders (only if no reminder popup is showing)
+    if (!currentReminder) {
+      const dueReminders = checkDueReminders(store, view.now);
+      if (dueReminders.length > 0) showReminderPopup(dueReminders[0]);
+    }
   }, 5000);
 }
 
@@ -474,6 +549,95 @@ function registerIpc() {
   ipcMain.on('dismiss-alarm', (_event, input = {}) => {
     requestAlarmDismiss(input.action ?? 'dismiss');
   });
+
+  // Reminder IPC handlers
+  ipcMain.on('reminder:snooze', async (_event, input) => {
+    const reminderId = String(input.id ?? '').trim();
+    if (!reminderId) return;
+
+    let newDueAt;
+    if (input.customDueAt) {
+      newDueAt = formatLocalDueAt(new Date(input.customDueAt));
+    } else if (input.presetMinutes) {
+      const view = currentView();
+      newDueAt = formatLocalDueAt(computeSnoozeDueAt(view.now, input.presetMinutes));
+    } else {
+      return;
+    }
+
+    const nextStore = snoozeReminder(store, { id: reminderId, newDueAt });
+    await persist(nextStore);
+    currentReminder = null;
+    resolveCurrentPopup();
+  });
+
+  ipcMain.on('reminder:start', async (_event, input) => {
+    const reminderId = String(input.id ?? '').trim();
+    const durationMinutes = Number(input.durationMinutes);
+    if (!reminderId || !Number.isFinite(durationMinutes) || durationMinutes <= 0) return;
+
+    const view = currentView();
+    const reminder = (listReminders(store) ?? []).find(r => r.id === reminderId);
+    if (!reminder) return;
+
+    try {
+      const result = startReminderFlow(store, {
+        now: view.now,
+        date: view.date,
+        reminderId,
+        durationMinutes,
+        label: reminder.title,
+      });
+      if (result.changed) {
+        await persist(result.store);
+        currentReminder = null;
+        resolveCurrentPopup();
+        safeSendReload();
+      }
+    } catch (error) {
+      console.error('reminder:start failed', error);
+    }
+  });
+
+  ipcMain.on('reminder:delete', async (_event, input) => {
+    const reminderId = String(input.id ?? '').trim();
+    if (!reminderId) return;
+
+    const nextStore = archiveReminder(store, { id: reminderId });
+    await persist(nextStore);
+    currentReminder = null;
+    resolveCurrentPopup();
+  });
+
+  ipcMain.on('reminder:close', async (_event, input) => {
+    const reminderId = String(input.id ?? '').trim();
+    if (!reminderId) return;
+
+    const reminder = (listReminders(store, { includeArchived: false }) ?? []).find(r => r.id === reminderId);
+    if (!reminder) return;
+
+    const closeMinutes = computeCloseSnoozeMinutes(reminder);
+    const view = currentView();
+    const newDueAt = formatLocalDueAt(computeSnoozeDueAt(view.now, closeMinutes));
+    const nextStore = snoozeReminder(store, {
+      id: reminderId,
+      newDueAt,
+      // Increment closeCount: read current, add 1
+      _incrementClose: true,
+    });
+
+    // Manually increment closeCount since snoozeReminder doesn't do it
+    const withClose = {
+      ...nextStore,
+      reminders: nextStore.reminders.map(r =>
+        r.id === reminderId ? { ...r, closeCount: (reminder.closeCount ?? 0) + 1 } : r,
+      ),
+    };
+
+    await persist(withClose);
+    currentReminder = null;
+    resolveCurrentPopup();
+  });
 }
 
 async function bootstrap() {
@@ -488,6 +652,9 @@ async function bootstrap() {
   registerIpc();
   startScheduler();
   showMainWindow('Ready.');
+  // Startup catch-up for missed reminders
+  const dueOnStart = checkDueReminders(store, currentView().now);
+  if (dueOnStart.length > 0) showReminderPopup(dueOnStart[0]);
 }
 
 app.whenReady().then(bootstrap);

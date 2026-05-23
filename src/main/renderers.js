@@ -190,6 +190,35 @@ function shell({ title, body, script = '', compact = false }) {
     .compact .panel { padding: 10px; border-radius: 7px; }
     .compact .section { margin-top: 10px; padding-top: 10px; }
     .compact .fields { grid-template-columns: 1fr 86px; }
+    .popup-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .popup-title { font-size: 16px; flex: 1; }
+    .popup-due { font-size: 12px; color: #96a1ae; }
+    .close-btn { background: none; border: none; color: #96a1ae; font-size: 20px; cursor: pointer; padding: 0 4px; line-height: 1; }
+    .close-btn:hover { color: #eef2f6; }
+    .popup-gantt { margin-bottom: 10px; }
+    .gantt { position: relative; }
+    .gantt-ticks { display: flex; justify-content: space-between; font-size: 10px; color: #6a7a90; margin-bottom: 2px; }
+    .gantt-track { position: relative; height: 36px; background: #1a2128; border-radius: 4px; overflow: hidden; }
+    .gantt-block { position: absolute; top: 2px; bottom: 2px; border-radius: 3px; background: #2a3442; overflow: hidden; padding: 0 4px; display: flex; align-items: center; }
+    .gantt-block span { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #c8d2dc; }
+    .gantt-block.course { background: #6b1d1d; }
+    .gantt-block.course span { color: #ffc0c0; }
+    .gantt-block.current { outline: 2px solid #65c38f; outline-offset: -2px; z-index: 1; }
+    .gantt-now { position: absolute; top: 0; bottom: 0; width: 2px; background: #65c38f; z-index: 2; pointer-events: none; }
+    .popup-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+    .popup-btn { border: 1px solid #384353; background: #202832; color: #f4f7fb; border-radius: 6px; padding: 8px 6px; cursor: pointer; font-size: 13px; text-align: center; }
+    .popup-btn:hover { background: #2a3442; }
+    .popup-btn.primary { background: #1a6b3c; border-color: #2a8c52; }
+    .popup-btn.primary:hover { background: #20844a; }
+    .popup-btn.danger { background: #6b1d1d; border-color: #8c2a2a; }
+    .popup-btn.danger:hover { background: #8c2a2a; }
+    .popup-submenu { margin-top: 8px; }
+    .popup-presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+    .preset-btn { border: 1px solid #384353; background: #151b22; color: #f4f7fb; border-radius: 4px; padding: 6px; cursor: pointer; font-size: 12px; text-align: center; }
+    .preset-btn:hover { background: #202832; }
+    .popup-custom { display: flex; gap: 4px; margin-top: 6px; }
+    .popup-custom input { flex: 1; min-width: 0; }
+    .popup-custom button { border: 1px solid #384353; background: #202832; color: #f4f7fb; border-radius: 4px; padding: 6px 10px; cursor: pointer; }
   </style>
 </head>
 <body class="${compact ? 'compact' : ''}">
@@ -606,4 +635,113 @@ ${renderCurrentActions(current)}
     </section>
   </main>`;
   return shell({ title: 'Tabula Rasa Quick', body, compact: true });
+}
+
+function ganttBarStyle(blockStart, blockEnd, windowStart, windowEnd) {
+  const totalWidth = windowEnd - windowStart;
+  if (totalWidth <= 0) return '';
+  const left = Math.max(0, (blockStart - windowStart) / totalWidth * 100);
+  const width = Math.min(100 - left, (blockEnd - blockStart) / totalWidth * 100);
+  if (width <= 0) return '';
+  return `left:${left.toFixed(1)}%;width:${width.toFixed(1)}%`;
+}
+
+function renderCompactGantt(dayPlanBlocks, now, windowStart, windowEnd) {
+  const visible = dayPlanBlocks.filter(b => {
+    const s = new Date(b.start).getTime();
+    const e = new Date(b.end).getTime();
+    return s < windowEnd && e > windowStart;
+  });
+  const currentBlock = dayPlanBlocks.find(b => {
+    const s = new Date(b.start).getTime();
+    const e = new Date(b.end).getTime();
+    return s <= now && e > now;
+  });
+
+  return `<div class="gantt">
+    <div class="gantt-ticks">
+      ${[windowStart, windowStart + (windowEnd - windowStart) / 2, windowEnd].map(t => `<span>${time(new Date(t))}</span>`).join('')}
+    </div>
+    <div class="gantt-track">
+      ${visible.map(b => {
+        const s = new Date(b.start).getTime();
+        const e = new Date(b.end).getTime();
+        const isCourse = b.source === 'course-import' || b.courseBlock === true || b.lockedEventSource === 'course-import';
+        const isCurrent = currentBlock && s >= currentBlock.start.getTime() && e <= currentBlock.end.getTime() && b.label === currentBlock.label;
+        return `<div class="gantt-block${isCourse ? ' course' : ''}${isCurrent ? ' current' : ''}" style="${ganttBarStyle(s, e, windowStart, windowEnd)}"><span>${esc(b.label)}</span></div>`;
+      }).join('')}
+      <div class="gantt-now" style="left:${((now - windowStart) / (windowEnd - windowStart) * 100).toFixed(1)}%"></div>
+    </div>
+  </div>`;
+}
+
+export function renderReminderPopupHtml(reminder, view) {
+  const now = new Date(view.now).getTime();
+  const dayPlanBlocks = combinedDayPlanBlocks(view);
+  const windowMs = 4 * 3600000;
+  const windowStart = now - windowMs / 2;
+  const windowEnd = now + windowMs / 2;
+
+  const body = `<main>
+    <div class="popup-header">
+      <strong class="popup-title">${esc(reminder.title)}</strong>
+      <span class="popup-due">${esc(reminder.dueAt?.slice(11, 16) ?? '')}</span>
+      <button class="close-btn" onclick="send('reminder:close', { id: '${esc(reminder.id)}' })">×</button>
+    </div>
+    <div class="popup-gantt">
+      ${renderCompactGantt(dayPlanBlocks, now, windowStart, windowEnd)}
+    </div>
+    <div class="popup-actions">
+      <button class="popup-btn" onclick="showSnoozeMenu()">Snooze</button>
+      <button class="popup-btn primary" onclick="showStartMenu()">开始</button>
+      <button class="popup-btn danger" onclick="send('reminder:delete', { id: '${esc(reminder.id)}' })">删除</button>
+    </div>
+    <div id="snoozeMenu" class="popup-submenu" style="display:none">
+      <div class="popup-presets">
+        ${[5, 10, 15, 30, 60].map(m => `<button class="preset-btn" onclick="send('reminder:snooze', { id: '${esc(reminder.id)}', presetMinutes: ${m} })">${m}分钟</button>`).join('')}
+        <button class="preset-btn" onclick="showCustomSnooze()">自定义</button>
+      </div>
+      <div id="customSnooze" style="display:none" class="popup-custom">
+        <input id="snoozeDate" type="date" value="${esc(view.date)}">
+        <input id="snoozeTime" type="time" value="${esc(time(new Date(now + 15 * 60000)))}">
+        <button onclick="sendCustomSnooze('${esc(reminder.id)}')">确认</button>
+      </div>
+    </div>
+    <div id="startMenu" class="popup-submenu" style="display:none">
+      <div class="popup-presets">
+        ${[15, 30, 45, 60, 90].map(m => `<button class="preset-btn" onclick="send('reminder:start', { id: '${esc(reminder.id)}', durationMinutes: ${m} })">${m}分钟</button>`).join('')}
+        <button class="preset-btn" onclick="showCustomStart()">自定义</button>
+      </div>
+      <div id="customStart" style="display:none" class="popup-custom">
+        <input id="startMinutes" type="number" value="30" min="5" max="480">
+        <button onclick="sendCustomStart('${esc(reminder.id)}')">确认</button>
+      </div>
+    </div>
+  </main>`;
+
+  return shell({ title: 'Reminder', body, compact: true, script: `
+    function showSnoozeMenu() {
+      document.getElementById('snoozeMenu').style.display = 'block';
+      document.getElementById('startMenu').style.display = 'none';
+    }
+    function showStartMenu() {
+      document.getElementById('startMenu').style.display = 'block';
+      document.getElementById('snoozeMenu').style.display = 'none';
+    }
+    function showCustomSnooze() {
+      document.getElementById('customSnooze').style.display = 'flex';
+    }
+    function showCustomStart() {
+      document.getElementById('customStart').style.display = 'flex';
+    }
+    function sendCustomSnooze(id) {
+      var date = byId('snoozeDate').value;
+      var time = byId('snoozeTime').value;
+      if (date && time) send('reminder:snooze', { id: id, presetMinutes: null, customDueAt: date + 'T' + time });
+    }
+    function sendCustomStart(id) {
+      var minutes = Number(byId('startMinutes').value);
+      if (minutes > 0) send('reminder:start', { id: id, durationMinutes: minutes });
+    }
+  ` });
 }
