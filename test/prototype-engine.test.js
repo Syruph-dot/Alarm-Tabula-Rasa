@@ -35,7 +35,7 @@ const fixedEvents = [
   },
 ];
 
-const reminderItems = [
+const personalProjects = [
   {
     id: 'item-a',
     label: '项目 A',
@@ -59,7 +59,7 @@ function iso(value) {
 describe('prototype free-time engine', () => {
   it('rebuilds from the supplied sample-day time instead of the host date', () => {
     const now = new Date('2026-05-22T09:10:00+08:00');
-    const blocks = rebuildFromNow(fixedEvents, reminderItems, now, settings);
+    const blocks = rebuildFromNow(fixedEvents, personalProjects, now, settings);
 
     assert.ok(blocks.length > 0);
     assert.equal(iso(blocks[0].start), now.toISOString());
@@ -74,7 +74,7 @@ describe('prototype free-time engine', () => {
       new Date('2026-05-22T08:00:00+08:00'),
       new Date('2026-05-22T23:00:00+08:00'),
     );
-    const blocks = rebuildFromNow(fixedEvents, reminderItems, new Date('2026-05-22T09:00:00+08:00'), settings);
+    const blocks = rebuildFromNow(fixedEvents, personalProjects, new Date('2026-05-22T09:00:00+08:00'), settings);
     assert.equal(iso(blocks[0].start), new Date('2026-05-22T09:00:00+08:00').toISOString());
     assert.equal(iso(blocks[0].end), new Date('2026-05-22T09:30:00+08:00').toISOString());
     assert.ok(free.length > 0);
@@ -82,7 +82,7 @@ describe('prototype free-time engine', () => {
     const result = extendBlockAndReschedule(
       blocks,
       fixedEvents,
-      reminderItems,
+      personalProjects,
       new Date('2026-05-22T09:10:00+08:00'),
       15,
       settings,
@@ -121,11 +121,11 @@ describe('prototype free-time engine', () => {
 
   it('keeps runtime block extension when scores change and the future table is rebuilt', () => {
     const now = new Date('2026-05-22T09:10:00+08:00');
-    const blocks = rebuildFromNow(fixedEvents, reminderItems, now, settings);
+    const blocks = rebuildFromNow(fixedEvents, personalProjects, now, settings);
     const extended = extendBlockAndReschedule(
       blocks,
       fixedEvents,
-      reminderItems,
+      personalProjects,
       now,
       15,
       settings,
@@ -134,7 +134,7 @@ describe('prototype free-time engine', () => {
 
     const rebuilt = rebuildFromNow(
       applyRuntimeOverrides(fixedEvents, [extended.extendedBlock]),
-      reminderItems.map(item => item.id === 'item-b' ? { ...item, importanceScore: 1700 } : item),
+      personalProjects.map(item => item.id === 'item-b' ? { ...item, importanceScore: 1700 } : item),
       now,
       settings,
     );
@@ -146,11 +146,11 @@ describe('prototype free-time engine', () => {
 
   it('can move the active block end 15 minutes earlier and rebuild from the new end', () => {
     const now = new Date('2026-05-22T12:00:00+08:00');
-    const blocks = rebuildFromNow(fixedEvents, reminderItems, new Date('2026-05-22T11:30:00+08:00'), settings);
+    const blocks = rebuildFromNow(fixedEvents, personalProjects, new Date('2026-05-22T11:30:00+08:00'), settings);
     const result = moveBlockEndAndReschedule(
       blocks,
       fixedEvents,
-      reminderItems,
+      personalProjects,
       now,
       -15,
       settings,
@@ -164,11 +164,11 @@ describe('prototype free-time engine', () => {
 
   it('does not schedule an early-ended item during the configured cooldown window', () => {
     const now = new Date('2026-05-22T12:00:00+08:00');
-    const blocks = rebuildFromNow(fixedEvents, reminderItems, new Date('2026-05-22T11:30:00+08:00'), settings);
+    const blocks = rebuildFromNow(fixedEvents, personalProjects, new Date('2026-05-22T11:30:00+08:00'), settings);
     const result = moveBlockEndAndReschedule(
       blocks,
       fixedEvents,
-      reminderItems,
+      personalProjects,
       now,
       'now',
       settings,
@@ -186,11 +186,11 @@ describe('prototype free-time engine', () => {
 
   it('uses the configured early-end cooldown length', () => {
     const now = new Date('2026-05-22T12:00:00+08:00');
-    const blocks = rebuildFromNow(fixedEvents, reminderItems, new Date('2026-05-22T11:30:00+08:00'), settings);
+    const blocks = rebuildFromNow(fixedEvents, personalProjects, new Date('2026-05-22T11:30:00+08:00'), settings);
     const result = moveBlockEndAndReschedule(
       blocks,
       fixedEvents,
-      reminderItems,
+      personalProjects,
       now,
       'now',
       { ...settings, earlyEndCooldownMinutes: 30 },
@@ -209,11 +209,11 @@ describe('prototype free-time engine', () => {
     const gapEnd = new Date('2026-05-22T13:00:00+08:00');
     const blocks = rebuildFromNow(
       [],
-      reminderItems,
+      personalProjects,
       gapStart,
       {
         ...settings,
-        itemCooldowns: reminderItems.map(item => ({
+        itemCooldowns: personalProjects.map(item => ({
           itemId: item.id,
           until: new Date('2026-05-22T15:00:00+08:00'),
         })),
@@ -227,14 +227,14 @@ describe('prototype free-time engine', () => {
 
   it('can skip the next block at an exact boundary without creating a zero-minute block', () => {
     const now = new Date('2026-05-22T12:00:00+08:00');
-    const blocks = rebuildFromNow(fixedEvents, reminderItems, new Date('2026-05-22T11:30:00+08:00'), settings);
-    const first = moveBlockEndAndReschedule(blocks, fixedEvents, reminderItems, now, 'now', settings);
+    const blocks = rebuildFromNow(fixedEvents, personalProjects, new Date('2026-05-22T11:30:00+08:00'), settings);
+    const first = moveBlockEndAndReschedule(blocks, fixedEvents, personalProjects, now, 'now', settings);
     assert.ok(first);
 
     const second = moveBlockEndAndReschedule(
       [first.adjustedBlock, ...first.subsequentBlocks],
       applyRuntimeOverrides(fixedEvents, [first.adjustedBlock]),
-      reminderItems,
+      personalProjects,
       now,
       'now',
       { ...settings, itemCooldowns: [first.cooldown] },
@@ -251,11 +251,11 @@ describe('prototype free-time engine', () => {
 
   it('can stop the active block now and rebuild from now', () => {
     const now = new Date('2026-05-22T12:00:00+08:00');
-    const blocks = rebuildFromNow(fixedEvents, reminderItems, new Date('2026-05-22T11:30:00+08:00'), settings);
+    const blocks = rebuildFromNow(fixedEvents, personalProjects, new Date('2026-05-22T11:30:00+08:00'), settings);
     const result = moveBlockEndAndReschedule(
       blocks,
       fixedEvents,
-      reminderItems,
+      personalProjects,
       now,
       'now',
       settings,
@@ -272,15 +272,15 @@ describe('prototype free-time engine', () => {
 
   it('replaces an existing runtime override when the same block is shortened later', () => {
     const now = new Date('2026-05-22T09:10:00+08:00');
-    const blocks = rebuildFromNow(fixedEvents, reminderItems, now, settings);
-    const extended = extendBlockAndReschedule(blocks, fixedEvents, reminderItems, now, 15, settings);
+    const blocks = rebuildFromNow(fixedEvents, personalProjects, now, settings);
+    const extended = extendBlockAndReschedule(blocks, fixedEvents, personalProjects, now, 15, settings);
     assert.ok(extended);
 
     const effective = applyRuntimeOverrides(fixedEvents, [extended.extendedBlock]);
     const shortened = moveBlockEndAndReschedule(
       [extended.extendedBlock, ...extended.subsequentBlocks],
       effective,
-      reminderItems,
+      personalProjects,
       now,
       -15,
       settings,
@@ -295,11 +295,11 @@ describe('prototype free-time engine', () => {
 
   it('can insert a break block and rebuild after the break ends', () => {
     const now = new Date('2026-05-22T11:45:00+08:00');
-    const blocks = rebuildFromNow(fixedEvents, reminderItems, new Date('2026-05-22T11:30:00+08:00'), settings);
+    const blocks = rebuildFromNow(fixedEvents, personalProjects, new Date('2026-05-22T11:30:00+08:00'), settings);
     const result = addBreakAndReschedule(
       blocks,
       fixedEvents,
-      reminderItems,
+      personalProjects,
       now,
       15,
       settings,
@@ -316,15 +316,15 @@ describe('prototype free-time engine', () => {
 
   it('can insert a break when the current block is already a runtime override', () => {
     const now = new Date('2026-05-22T11:45:00+08:00');
-    const blocks = rebuildFromNow(fixedEvents, reminderItems, now, settings);
-    const extended = extendBlockAndReschedule(blocks, fixedEvents, reminderItems, now, 15, settings);
+    const blocks = rebuildFromNow(fixedEvents, personalProjects, now, settings);
+    const extended = extendBlockAndReschedule(blocks, fixedEvents, personalProjects, now, 15, settings);
     assert.ok(extended);
     const effective = applyRuntimeOverrides(fixedEvents, [extended.extendedBlock]);
 
     const result = addBreakAndReschedule(
       [extended.extendedBlock, ...extended.subsequentBlocks],
       effective,
-      reminderItems,
+      personalProjects,
       now,
       15,
       settings,

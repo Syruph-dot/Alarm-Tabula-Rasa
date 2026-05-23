@@ -129,6 +129,6 @@ describe('preference sampler', () => {
 
     assert.equal(result.comparisonHistory.length, 1);
     assert.equal(result.softFillBlocks[0].itemId, 'b');
-    assert.ok(byId(result.reminderItems, 'b').importanceScore > byId(result.reminderItems, 'a').importanceScore);
+    assert.ok(byId(result.personalProjects, 'b').importanceScore > byId(result.personalProjects, 'a').importanceScore);
   });
 });

@@ -4,9 +4,9 @@ import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   addFixedEvent,
-  addReminderItem,
+  addPersonalProject,
   adjustFixedEventEnd,
-  archiveReminderItem,
+  archivePersonalProject,
   cancelFixedEvent,
   clearAllData,
   ensureAppStore,
@@ -40,7 +40,7 @@ describe('app store', () => {
       assert.equal(store.runtime.timeMode, 'real');
       assert.equal(store.runtime.paused, false);
       assert.ok(store.fixedEvents['2026-05-22'].length > 0);
-      assert.ok(store.reminderItems.length > 0);
+      assert.ok(store.personalProjects.length > 0);
       assert.deepEqual(JSON.parse(await readFile(storePath, 'utf-8')).version, 1);
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -54,7 +54,7 @@ describe('app store', () => {
         userDataPath: dir,
         samplePath: './docs/sample-data/free-time-sample-2026-05-22.json',
       });
-      const changed = updateSettings(addReminderItem(store, {
+      const changed = updateSettings(addPersonalProject(store, {
         label: 'New task',
         defaultDurationMinutes: 25,
       }), {
@@ -72,7 +72,7 @@ describe('app store', () => {
       assert.equal(reloaded.settings.transitionEffectId, 'base.black-sweep');
       assert.equal(reloaded.settings.transitionTriangleSizePx, 112);
       assert.equal(reloaded.settings.transitionTiltDeg, -12);
-      assert.ok(reloaded.reminderItems.some(item => item.label === 'New task'));
+      assert.ok(reloaded.personalProjects.some(item => item.label === 'New task'));
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -98,13 +98,13 @@ describe('app store', () => {
       startTime: '08:00',
       durationMinutes: 45,
     });
-    const archived = archiveReminderItem(withEvent, 'task-a');
+    const archived = archivePersonalProject(withEvent, 'task-a');
 
     assert.notEqual(withEvent, store);
     assert.equal(withEvent.fixedEvents['2026-05-22'][0].startTime, '2026-05-22T08:00:00+08:00');
     assert.equal(withEvent.fixedEvents['2026-05-22'][0].endTime, '2026-05-22T08:45:00+08:00');
-    assert.equal(archived.reminderItems[0].active, false);
-    assert.ok(archived.reminderItems[0].archivedAt);
+    assert.equal(archived.personalProjects[0].active, false);
+    assert.ok(archived.personalProjects[0].archivedAt);
   });
 
   it('updates fixed event end time and cancels fixed events immutably', () => {
@@ -130,7 +130,7 @@ describe('app store', () => {
           },
         ],
       },
-      reminderItems: [],
+      personalProjects: [],
       comparisonHistory: [],
       generatedTables: {},
       settings: {},
@@ -167,7 +167,7 @@ describe('app store', () => {
           },
         ],
       },
-      reminderItems: [],
+      personalProjects: [],
       comparisonHistory: [],
       generatedTables: {},
       settings: {},
@@ -229,12 +229,12 @@ describe('app store', () => {
     }
   });
 
-  it('clearAllData resets fixedEvents, generatedTables, reminderItems, comparisonHistory, and courseWeeklySchedule', () => {
+  it('clearAllData resets fixedEvents, generatedTables, personalProjects, comparisonHistory, and courseWeeklySchedule', () => {
     const store = {
       version: 1,
       fixedEvents: { '2026-05-22': [{ id: 'e1', label: 'Test', source: 'course-import' }] },
       generatedTables: { '2026-05-22': [{ itemId: 'a', label: 'Fill' }] },
-      reminderItems: [{ id: 'r1', label: 'Reminder', active: true }],
+      personalProjects: [{ id: 'r1', label: 'Reminder', active: true }],
       comparisonHistory: [{ at: '2026-05-22T10:00:00+08:00', leftItemId: 'a', rightItemId: 'b', choice: 'left' }],
       courseWeeklySchedule: [{ dayOfWeek: 1, label: 'Math', startTime: '09:00', endTime: '10:00' }],
       settings: { dayStart: '08:00', dayEnd: '23:00' },
@@ -245,7 +245,7 @@ describe('app store', () => {
 
     assert.deepEqual(cleared.fixedEvents, {});
     assert.deepEqual(cleared.generatedTables, {});
-    assert.deepEqual(cleared.reminderItems, []);
+    assert.deepEqual(cleared.personalProjects, []);
     assert.deepEqual(cleared.comparisonHistory, []);
     assert.deepEqual(cleared.courseWeeklySchedule, []);
     assert.notEqual(cleared, store);
@@ -256,7 +256,7 @@ describe('app store', () => {
     const store = {
       version: 1,
       fixedEvents: {},
-      reminderItems: [],
+      personalProjects: [],
       comparisonHistory: [],
       generatedTables: {},
       settings: {},

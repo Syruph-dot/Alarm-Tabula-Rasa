@@ -61,17 +61,18 @@ function nextDayPlanBlock(blocks = [], now = null) {
 }
 
 function planBlockFromSoft(block) {
+  const source = block.lockedEventSource ?? null;
   return {
     itemId: block.itemId,
     fixedEventId: block.lockedEventId ?? null,
-    lockedEventSource: block.lockedEventSource ?? null,
+    lockedEventSource: source,
     start: block.start,
     end: block.end,
     label: block.label,
     durationMinutes: block.durationMinutes ?? durationMinutes(block.start, block.end),
     break: block.break,
     source: 'soft',
-    locked: block.runtimeLocked === true,
+    locked: block.runtimeLocked === true && ['runtime-lock', 'project-pick'].includes(source),
   };
 }
 
@@ -86,7 +87,7 @@ function planBlockFromFixed(event) {
     end: event.endTime,
     label: event.label,
     durationMinutes: durationMinutes(event.startTime, event.endTime),
-    locked: event.locked === true || ['class', 'course-import', 'temporary', 'fixed', 'project-pick', 'runtime-lock', 'runtime'].includes(source),
+    locked: ['runtime-lock', 'project-pick'].includes(source),
   };
 }
 
@@ -216,7 +217,7 @@ function renderDayPlanBlocks(blocks = [], now = null) {
   }).join('');
 }
 
-function renderReminderItems(items = []) {
+function renderPersonalProjects(items = []) {
   if (items.length === 0) return '<div class="muted">No reminder items.</div>';
   return items.map(item => `
     <div class="item"${item.active !== false ? ` data-project-label="${esc(item.label)}"` : ''}>
@@ -224,7 +225,7 @@ function renderReminderItems(items = []) {
         <strong>${esc(item.label)}</strong>
         <small>${item.active === false ? 'Archived' : 'Active'} / ${esc(item.defaultDurationMinutes ?? '')}m</small>
       </div>
-      ${item.active === false ? '' : `<button data-action="archive-reminder" onclick="send('archive-reminder', { itemId: '${esc(item.id)}' })">Archive</button>`}
+      ${item.active === false ? '' : `<button data-action="archive-personal-project" onclick="send('archive-personal-project', { itemId: '${esc(item.id)}' })">Archive</button>`}
     </div>
   `).join('');
 }
@@ -283,7 +284,7 @@ function renderCourseTablePage(schedule) {
 }
 
 function renderProjectPage(view) {
-  const items = view.reminderItems ?? [];
+  const items = view.personalProjects ?? [];
   if (items.length === 0) return '<div class="muted">暂无个人项目。</div>';
   return items.map(item => `
     <div class="item"${item.active !== false ? ` data-project-label="${esc(item.label)}"` : ''}>
@@ -292,8 +293,8 @@ function renderProjectPage(view) {
         <small>${item.active === false ? '已归档' : '进行中'} / ${esc(item.defaultDurationMinutes ?? '')}m</small>
       </div>
       ${item.active === false
-        ? `<button onclick="send('add-reminder', { id: '${esc(item.id)}', label: '${esc(item.label)}', defaultDurationMinutes: ${item.defaultDurationMinutes ?? 30}, active: true })">激活</button>`
-        : `<button onclick="send('archive-reminder', { itemId: '${esc(item.id)}' })">归档</button>`}
+        ? `<button onclick="send('add-personal-project', { id: '${esc(item.id)}', label: '${esc(item.label)}', defaultDurationMinutes: ${item.defaultDurationMinutes ?? 30}, active: true })">激活</button>`
+        : `<button onclick="send('archive-personal-project', { itemId: '${esc(item.id)}' })">归档</button>`}
     </div>
   `).join('');
 }
@@ -328,7 +329,7 @@ export function renderMainHtml(view, options = {}) {
           <label>时长(分)<input id="projectDuration" type="number" value="${esc(view.settings.defaultReminderDurationMinutes ?? 30)}"></label>
         </div>
         <div class="row section">
-          <button onclick="send('add-reminder', { label: byId('projectLabel').value, defaultDurationMinutes: Number(byId('projectDuration').value) })">添加项目</button>
+          <button onclick="send('add-personal-project', { label: byId('projectLabel').value, defaultDurationMinutes: Number(byId('projectDuration').value) })">添加项目</button>
         </div>
         <div class="list section">${renderProjectPage(view)}</div>
       </section>
@@ -338,6 +339,9 @@ export function renderMainHtml(view, options = {}) {
       <section class="panel">
         <h2>Day Plan</h2>
         <div class="timeline">${renderDayPlanBlocks(dayPlanBlocks, view.now)}</div>
+        <div class="row section">
+          <button data-action="clear-user-locks" onclick="send('clear-user-locks', { date: '${esc(view.date)}' })">清除Locked状态</button>
+        </div>
       </section>
       <aside>
         <section class="panel">
@@ -372,9 +376,9 @@ export function renderMainHtml(view, options = {}) {
             <label>Minutes<input id="reminderDuration" type="number" value="${esc(view.settings.defaultReminderDurationMinutes ?? 30)}"></label>
           </div>
           <div class="row section">
-            <button data-action="add-reminder" onclick="send('add-reminder', { label: byId('reminderLabel').value, defaultDurationMinutes: Number(byId('reminderDuration').value) })">Add</button>
+            <button data-action="add-personal-project" onclick="send('add-personal-project', { label: byId('reminderLabel').value, defaultDurationMinutes: Number(byId('reminderDuration').value) })">Add</button>
           </div>
-          <div class="list section">${renderReminderItems(view.reminderItems)}</div>
+          <div class="list section">${renderPersonalProjects(view.personalProjects)}</div>
         </section>
         <section class="panel section">
           <h2>Course Table Import</h2>

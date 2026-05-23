@@ -2,9 +2,9 @@ import { createRequire } from 'node:module';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  archiveReminderItem,
   addFixedEvent,
-  addReminderItem,
+  addPersonalProject,
+  archivePersonalProject,
   adjustFixedEventEnd,
   cancelFixedEvent,
   clearAllData,
@@ -18,6 +18,7 @@ import {
   addBreakToStore,
   addTemporaryEventToStore,
   buildRuntimeView,
+  clearUserLocksInStore,
   completeAlarm,
   endCurrentBlockEarly,
   extendCurrentBlock,
@@ -311,13 +312,13 @@ function registerIpc() {
     safeSendReload();
   });
 
-  ipcMain.on('add-reminder', async (_event, input) => {
-    await persist(addReminderItem(store, input));
+  ipcMain.on('add-personal-project', async (_event, input) => {
+    await persist(addPersonalProject(store, input));
     safeSendReload();
   });
 
-  ipcMain.on('archive-reminder', async (_event, input) => {
-    await persist(archiveReminderItem(store, input.itemId));
+  ipcMain.on('archive-personal-project', async (_event, input) => {
+    await persist(archivePersonalProject(store, input.itemId));
     safeSendReload();
   });
 
@@ -375,6 +376,19 @@ function registerIpc() {
     } catch (error) {
       renderMain(`Could not unlock block: ${error.message}`);
       renderTrayWidget(`Could not unlock block: ${error.message}`);
+    }
+  });
+
+  ipcMain.on('clear-user-locks', async (_event, input = {}) => {
+    try {
+      const result = clearUserLocksInStore(store, { ...input, now: currentView().now });
+      await applyRuntimeResult(
+        result,
+        result.changed ? `已清除 ${result.removedCount} 个 Locked 状态。` : '没有可清除的 Locked 状态。',
+      );
+    } catch (error) {
+      renderMain(`Could not clear Locked status: ${error.message}`);
+      renderTrayWidget(`Could not clear Locked status: ${error.message}`);
     }
   });
 

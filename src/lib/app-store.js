@@ -54,7 +54,7 @@ function normalizeStore(raw) {
     version: raw.version ?? DEFAULT_VERSION,
     metadata: raw.metadata ?? {},
     fixedEvents: raw.fixedEvents ?? {},
-    reminderItems: raw.reminderItems ?? [],
+    personalProjects: raw.personalProjects ?? raw.reminderItems ?? [],
     comparisonHistory: raw.comparisonHistory ?? [],
     generatedTables: raw.generatedTables ?? {},
     courseWeeklySchedule: raw.courseWeeklySchedule ?? [],
@@ -121,7 +121,7 @@ export function updateSettings(store, patch) {
   return normalizeStore(next);
 }
 
-export function addReminderItem(store, input) {
+export function addPersonalProject(store, input) {
   const label = String(input.label ?? '').trim();
   if (!label) throw new Error('label is required');
 
@@ -142,17 +142,17 @@ export function addReminderItem(store, input) {
 
   return normalizeStore({
     ...store,
-    reminderItems: [
-      ...store.reminderItems.filter(existing => existing.id !== id),
+    personalProjects: [
+      ...store.personalProjects.filter(existing => existing.id !== id),
       item,
     ],
   });
 }
 
-export function archiveReminderItem(store, itemId, at = new Date()) {
+export function archivePersonalProject(store, itemId, at = new Date()) {
   return normalizeStore({
     ...store,
-    reminderItems: store.reminderItems.map(item => item.id === itemId
+    personalProjects: store.personalProjects.map(item => item.id === itemId
       ? { ...item, active: false, archivedAt: new Date(at).toISOString() }
       : item),
   });
@@ -250,7 +250,7 @@ export function clearAllData(store) {
     ...clone(store),
     fixedEvents: {},
     generatedTables: {},
-    reminderItems: [],
+    personalProjects: [],
     comparisonHistory: [],
     courseWeeklySchedule: [],
   });

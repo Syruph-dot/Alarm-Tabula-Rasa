@@ -4,6 +4,7 @@ import {
   addBreakToStore,
   addTemporaryEventToStore,
   buildRuntimeView,
+  clearUserLocksInStore,
   completeAlarm,
   endCurrentBlockEarly,
   extendCurrentBlock,
@@ -28,7 +29,7 @@ function baseStore() {
         },
       ],
     },
-    reminderItems: [
+    personalProjects: [
       { id: 'a', label: 'Task A', active: true, defaultDurationMinutes: 30, importanceScore: 1500, confidence: 0.2 },
       { id: 'b', label: 'Task B', active: true, defaultDurationMinutes: 30, importanceScore: 1400, confidence: 0.2 },
     ],
@@ -76,7 +77,7 @@ describe('app runtime', () => {
     });
 
     assert.equal(result.store.comparisonHistory.length, 1);
-    assert.ok(result.store.reminderItems.find(item => item.id === 'b').importanceScore > 1400);
+    assert.ok(result.store.personalProjects.find(item => item.id === 'b').importanceScore > 1400);
     assert.equal(result.view.softFillBlocks[0].itemId, 'b');
   });
 
@@ -133,7 +134,7 @@ describe('app runtime', () => {
     });
 
     const event = result.store.fixedEvents['2026-05-22'].find(candidate => candidate.label === 'One-off errand');
-    const oneOffItem = result.store.reminderItems.find(item => item.label === 'One-off errand');
+    const oneOffItem = result.store.personalProjects.find(item => item.label === 'One-off errand');
 
     assert.ok(event);
     assert.equal(event.source, 'project-pick');
@@ -153,7 +154,7 @@ describe('app runtime', () => {
     )));
   });
 
-  it('locks a soft block so later dynamic rebuilds cannot replace it', () => {
+  it('locks only the block name while later dynamic rebuilds can still resize the block', () => {
     const locked = lockBlockInStore(baseStore(), {
       now: new Date('2026-05-22T08:00:00+08:00'),
       start: '2026-05-22T08:00:00+08:00',
@@ -161,7 +162,19 @@ describe('app runtime', () => {
       label: 'Task A',
       itemId: 'a',
     });
+    const longerBStore = {
+      ...locked.store,
+      personalProjects: locked.store.personalProjects.map(item => item.id === 'b'
+        ? { ...item, defaultDurationMinutes: 45 }
+        : item),
+    };
     const rebuilt = resolvePreferenceInStore(locked.store, {
+      now: new Date('2026-05-22T08:00:00+08:00'),
+      leftItemId: 'a',
+      rightItemId: 'b',
+      choice: 'right',
+    });
+    const resized = resolvePreferenceInStore(longerBStore, {
       now: new Date('2026-05-22T08:00:00+08:00'),
       leftItemId: 'a',
       rightItemId: 'b',
@@ -172,14 +185,45 @@ describe('app runtime', () => {
     assert.ok(event);
     assert.equal(event.locked, true);
     assert.equal(event.label, 'Task A');
-    const lockedBlock = rebuilt.view.softFillBlocks.find(block => block.label === 'Task A');
+    const lockedBlock = resized.view.softFillBlocks.find(block => block.label === 'Task A');
     assert.ok(lockedBlock);
     assert.equal(lockedBlock.runtimeLocked, true);
     assert.equal(lockedBlock.itemId, 'a');
-    assert.ok(rebuilt.view.softFillBlocks.filter(block => block !== lockedBlock).every(block => (
-      block.end <= new Date('2026-05-22T08:00:00+08:00')
-      || block.start >= new Date('2026-05-22T08:30:00+08:00')
-    )));
+    assert.equal(lockedBlock.start.toISOString(), new Date('2026-05-22T08:00:00+08:00').toISOString());
+    assert.equal(lockedBlock.end.toISOString(), new Date('2026-05-22T08:45:00+08:00').toISOString());
+    assert.equal(resized.view.softFillBlocks.some(block => (
+      block !== lockedBlock
+      && block.start < new Date('2026-05-22T08:45:00+08:00')
+      && block.end > new Date('2026-05-22T08:00:00+08:00')
+    )), false);
+  });
+
+  it('clears user Locked name pins without deleting fixed schedule blocks', () => {
+    const locked = lockBlockInStore(baseStore(), {
+      now: new Date('2026-05-22T08:00:00+08:00'),
+      start: '2026-05-22T08:00:00+08:00',
+      end: '2026-05-22T08:30:00+08:00',
+      label: 'Task A',
+      itemId: 'a',
+    });
+    const withTemporary = addTemporaryEventToStore(locked.store, {
+      now: new Date('2026-05-22T08:00:00+08:00'),
+      date: '2026-05-22',
+      label: 'Meeting',
+      startTime: '09:00',
+      durationMinutes: 30,
+    });
+
+    const cleared = clearUserLocksInStore(withTemporary.store, {
+      now: new Date('2026-05-22T08:00:00+08:00'),
+      date: '2026-05-22',
+    });
+
+    assert.equal(cleared.changed, true);
+    assert.equal(cleared.removedCount, 1);
+    assert.equal(cleared.store.fixedEvents['2026-05-22'].some(event => event.source === 'runtime-lock'), false);
+    assert.equal(cleared.store.fixedEvents['2026-05-22'].some(event => event.source === 'temporary'), true);
+    assert.equal(cleared.store.fixedEvents['2026-05-22'].some(event => event.source === 'class'), true);
   });
 
   it('unlocks a user-locked block so dynamic rebuilds can replace it again', () => {

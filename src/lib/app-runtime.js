@@ -55,7 +55,7 @@ function blockKey(alarm) {
 }
 
 function activeItems(store) {
-  return store.reminderItems.filter(item => item.active !== false);
+  return store.personalProjects.filter(item => item.active !== false);
 }
 
 function persistedEventsForDate(store, date) {
@@ -78,7 +78,7 @@ function eventDateKey(start, fallbackDate) {
 }
 
 function findItemByLabel(store, label) {
-  return store.reminderItems.find(item => item.label === label && item.active !== false);
+  return store.personalProjects.find(item => item.label === label && item.active !== false);
 }
 
 function slug(value, fallback = 'item') {
@@ -108,7 +108,7 @@ function archivedOneOffItem(label, durationMinutes, at) {
 }
 
 function isUserLockEvent(event) {
-  return ['runtime-lock', 'project-pick', 'runtime'].includes(event?.source);
+  return ['runtime-lock', 'project-pick'].includes(event?.source);
 }
 
 function matchesBlockWindow(event, input) {
@@ -140,7 +140,7 @@ export function buildRuntimeView(store, options = {}) {
     ...plan,
     now,
     settings,
-    reminderItems: store.reminderItems,
+    personalProjects: store.personalProjects,
     comparisonHistory: store.comparisonHistory ?? [],
     preferencePair,
     courseWeeklySchedule: store.courseWeeklySchedule ?? [],
@@ -168,8 +168,8 @@ export function resolvePreferenceInStore(store, input) {
   );
   const nextStore = {
     ...clone(store),
-    reminderItems: store.reminderItems.map(item => (
-      nextPlan.reminderItems.find(next => next.id === item.id) ?? item
+    personalProjects: store.personalProjects.map(item => (
+      nextPlan.personalProjects.find(next => next.id === item.id) ?? item
     )),
     comparisonHistory: nextPlan.comparisonHistory,
     generatedTables: {
@@ -263,6 +263,32 @@ export function unlockBlockInStore(store, input = {}) {
   return { store: nextStore, view: rebuildStoreView(nextStore, now, date), changed: true };
 }
 
+export function clearUserLocksInStore(store, input = {}) {
+  const now = input.now ? new Date(input.now) : runtimeNow(store);
+  const date = input.date ?? localDateKey(now);
+  const persistedEvents = persistedEventsForDate(store, date);
+  const nextEvents = persistedEvents.filter(event => !isUserLockEvent(event));
+  const removedCount = persistedEvents.length - nextEvents.length;
+  if (removedCount === 0) {
+    return { store, view: rebuildStoreView(store, now, date), changed: false, removedCount: 0 };
+  }
+
+  const nextStore = {
+    ...clone(store),
+    fixedEvents: {
+      ...store.fixedEvents,
+      [date]: nextEvents,
+    },
+  };
+
+  return {
+    store: nextStore,
+    view: rebuildStoreView(nextStore, now, date),
+    changed: true,
+    removedCount,
+  };
+}
+
 export function replaceBlockProjectInStore(store, input = {}) {
   const now = input.now ? new Date(input.now) : runtimeNow(store);
   const start = normalizeInstant(input.start, 'start');
@@ -273,7 +299,7 @@ export function replaceBlockProjectInStore(store, input = {}) {
 
   const durationMinutes = Math.max(1, Math.round((end - start) / 60000));
   const existingItem = input.itemId
-    ? store.reminderItems.find(item => item.id === input.itemId)
+    ? store.personalProjects.find(item => item.id === input.itemId)
     : findItemByLabel(store, label);
   const oneOffItem = input.oneOff
     ? archivedOneOffItem(label, durationMinutes, input.at ?? now)
@@ -296,9 +322,9 @@ export function replaceBlockProjectInStore(store, input = {}) {
   const current = buildRuntimeView(store, { systemNow: now, date });
   const nextStore = {
     ...clone(store),
-    reminderItems: oneOffItem
-      ? [...store.reminderItems.filter(item => item.id !== oneOffItem.id), oneOffItem]
-      : store.reminderItems,
+    personalProjects: oneOffItem
+      ? [...store.personalProjects.filter(item => item.id !== oneOffItem.id), oneOffItem]
+      : store.personalProjects,
     fixedEvents: {
       ...store.fixedEvents,
       [date]: [

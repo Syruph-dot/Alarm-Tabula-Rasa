@@ -37,7 +37,7 @@ const view = {
       score: 1500,
     },
   ],
-  reminderItems: [
+  personalProjects: [
     { id: 'a', label: 'Task A', active: true, defaultDurationMinutes: 30, importanceScore: 1500 },
     { id: 'b', label: 'Task B', active: true, defaultDurationMinutes: 25, importanceScore: 1400 },
   ],
@@ -52,11 +52,13 @@ describe('electron renderers', () => {
   it('renders a full editor with persistent data controls', () => {
     const html = renderMainHtml(view, { message: 'Saved', storePath: 'C:/Users/me/AppData/Roaming/TabulaRasa/data.json' });
 
-    assert.match(html, /data-action="add-reminder"/);
-    assert.match(html, /data-action="archive-reminder"/);
+    assert.match(html, /data-action="add-personal-project"/);
+    assert.match(html, /data-action="archive-personal-project"/);
     assert.match(html, /data-action="add-fixed-event"/);
     assert.match(html, />Add Time Block</);
     assert.match(html, />Add time</);
+    assert.match(html, /data-action="clear-user-locks"/);
+    assert.match(html, /清除Locked状态/);
     assert.match(html, /data-action="update-settings"/);
     assert.match(html, /<details class="settings-group" open>/);
     assert.match(html, /<summary>Transition<\/summary>/);
@@ -85,7 +87,6 @@ describe('electron renderers', () => {
     assert.match(html, /id="newBlockProjectLabel"/);
     assert.match(html, /data-action="change-block-project"/);
     assert.match(html, /data-action="lock-block"/);
-    assert.match(html, /data-action="unlock-block"/);
     assert.match(html, /data-block-actions/);
     assert.match(html, /toggleBlockActions/);
     assert.match(html, /openBlockPicker/);
@@ -288,5 +289,34 @@ describe('electron renderers', () => {
     assert.match(html, /data-action="unlock-block"/);
     assert.match(html, /'unlock-block'/);
     assert.match(html, />Locked<\/button>/);
+  });
+
+  it('does not show user Locked state on ordinary fixed schedule blocks', () => {
+    const html = renderMainHtml({
+      ...view,
+      softFillBlocks: [],
+      fixedEvents: [
+        {
+          id: 'class-1',
+          label: 'Class block',
+          startTime: '2026-05-22T10:00:00+08:00',
+          endTime: '2026-05-22T11:00:00+08:00',
+          source: 'class',
+          locked: true,
+        },
+        {
+          id: 'meeting-1',
+          label: 'Meeting block',
+          startTime: '2026-05-22T11:30:00+08:00',
+          endTime: '2026-05-22T12:00:00+08:00',
+          source: 'fixed',
+        },
+      ],
+    });
+
+    assert.match(html, /data-block-label="Class block"[\s\S]*data-block-locked="false"/);
+    assert.match(html, /data-block-label="Meeting block"[\s\S]*data-block-locked="false"/);
+    assert.equal((html.match(/>Locked<\/button>/g) ?? []).length, 0);
+    assert.equal((html.match(/<span class="lock-mark">Locked<\/span>/g) ?? []).length, 0);
   });
 });

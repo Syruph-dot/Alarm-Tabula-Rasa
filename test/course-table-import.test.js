@@ -35,7 +35,7 @@ const store = {
   fixedEvents: {
     '2026-05-22': [{ id: 'manual-1', label: 'Manual meeting', source: 'fixed' }],
   },
-  reminderItems: [],
+  personalProjects: [],
   comparisonHistory: [],
   generatedTables: {},
   courseWeeklySchedule: [],

@@ -1,9 +1,15 @@
 // PROTOTYPE — free-time fill engine logic.
 // Portable pure functions. No I/O. Liftable into production later.
 
+const NAME_PIN_SOURCES = new Set(['runtime-lock', 'project-pick']);
+
+export function isNamePinEvent(event) {
+  return NAME_PIN_SOURCES.has(event?.source);
+}
+
 export function mergeHardEvents(events) {
   if (events.length === 0) return [];
-  const parsed = events.map(e => ({
+  const parsed = events.filter(event => !isNamePinEvent(event)).map(e => ({
     start: new Date(e.startTime),
     end: new Date(e.endTime),
     labels: [e.label],
@@ -15,6 +21,7 @@ export function mergeHardEvents(events) {
       runtimeLocked: e.runtimeBlock.runtimeLocked ?? true,
     }] : [],
   }));
+  if (parsed.length === 0) return [];
   parsed.sort((a, b) => a.start - b.start);
   const merged = [];
   for (const ev of parsed) {
@@ -49,6 +56,48 @@ export function calculateFreeIntervals(merged, dayStart, dayEnd) {
 
 function runtimeBlocksFromMerged(merged) {
   return merged.flatMap(event => event.runtimeBlocks ?? []);
+}
+
+function namePinsAfter(events, effectiveStart) {
+  return events
+    .filter(event => isNamePinEvent(event) && event.runtimeBlock && new Date(event.endTime) > effectiveStart)
+    .sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+}
+
+function overlapMs(block, pin) {
+  const start = Math.max(new Date(block.start).getTime(), new Date(pin.startTime).getTime());
+  const end = Math.min(new Date(block.end).getTime(), new Date(pin.endTime).getTime());
+  return Math.max(0, end - start);
+}
+
+function applyNamePins(blocks, pins) {
+  if (pins.length === 0 || blocks.length === 0) return blocks;
+  const next = blocks.map(block => ({ ...block }));
+
+  for (const pin of pins) {
+    let bestIndex = -1;
+    let bestOverlap = 0;
+    for (let index = 0; index < next.length; index += 1) {
+      const currentOverlap = overlapMs(next[index], pin);
+      if (currentOverlap > bestOverlap) {
+        bestIndex = index;
+        bestOverlap = currentOverlap;
+      }
+    }
+    if (bestIndex < 0) continue;
+    const pinned = pin.runtimeBlock;
+    next[bestIndex] = {
+      ...next[bestIndex],
+      itemId: pinned.itemId ?? next[bestIndex].itemId,
+      label: pinned.label ?? pin.label,
+      runtimeLocked: true,
+      lockedEventId: pin.id,
+      lockedEventSource: pin.source,
+      ...(pinned.oneOff ? { oneOff: true } : {}),
+    };
+  }
+
+  return next;
 }
 
 export function selectItemForSlot(items, scheduledCounts, minFillMinutes, options = {}) {
@@ -117,7 +166,7 @@ function makeBreakBlock(start, end, reason = 'no-available-item') {
   };
 }
 
-export function fillFreeIntervals(freeIntervals, reminderItems, settings) {
+export function fillFreeIntervals(freeIntervals, personalProjects, settings) {
   const blocks = [];
   const scheduledCounts = new Map();
   const minFill = settings.minimumFillMinutes ?? 15;
@@ -132,8 +181,8 @@ export function fillFreeIntervals(freeIntervals, reminderItems, settings) {
       if (remainingMin < minFill) break;
 
       const availableItems = firstSlot && suppressFirstItemIds.size > 0
-        ? reminderItems.filter(item => !suppressFirstItemIds.has(item.id))
-        : reminderItems;
+        ? personalProjects.filter(item => !suppressFirstItemIds.has(item.id))
+        : personalProjects;
       const filteredItems = availableItems.filter(item => !isItemCoolingDown(item.id, cursor, cooldowns));
       const chosen = selectItemForSlot(filteredItems, scheduledCounts, minFill, settings);
       if (!chosen) {
@@ -166,7 +215,7 @@ export function fillFreeIntervals(freeIntervals, reminderItems, settings) {
   return blocks;
 }
 
-export function rebuildFromNow(fixedEvents, reminderItems, now, settings) {
+export function rebuildFromNow(fixedEvents, personalProjects, now, settings) {
   const dateStr = settings.date ?? now.toISOString().slice(0, 10);
   const futureEvents = fixedEvents.filter(e => new Date(e.endTime) > now);
   const merged = mergeHardEvents(futureEvents);
@@ -177,8 +226,11 @@ export function rebuildFromNow(fixedEvents, reminderItems, now, settings) {
   const effectiveStart = now > dayStart ? now : dayStart;
   const free = calculateFreeIntervals(merged, effectiveStart, dayEnd);
   const runtimeBlocks = runtimeBlocksFromMerged(merged).filter(block => block.end > effectiveStart);
-  const generated = fillFreeIntervals(free, reminderItems, settings);
-  return [...runtimeBlocks, ...generated].sort((a, b) => a.start - b.start);
+  const generated = fillFreeIntervals(free, personalProjects, settings);
+  return applyNamePins(
+    [...runtimeBlocks, ...generated].sort((a, b) => a.start - b.start),
+    namePinsAfter(futureEvents, effectiveStart),
+  );
 }
 
 function findTargetBlock(blocks, now) {
@@ -232,7 +284,7 @@ export function applyRuntimeOverrides(fixedEvents, blocks) {
 
 // Extend the current (or next) block by extraMinutes, then reschedule everything after it.
 // Returns { extendedBlock, subsequentBlocks } or null if no block to extend.
-export function extendBlockAndReschedule(blocks, fixedEvents, reminderItems, now, extraMinutes, settings) {
+export function extendBlockAndReschedule(blocks, fixedEvents, personalProjects, now, extraMinutes, settings) {
   const target = findTargetBlock(blocks, now);
   if (!target) return null;
 
@@ -252,12 +304,12 @@ export function extendBlockAndReschedule(blocks, fixedEvents, reminderItems, now
     fixedEvents.filter(event => !overlapsTarget(event, target)),
     [extended],
   );
-  const subsequent = rebuildFromNow(combined, reminderItems, newEnd, settings);
+  const subsequent = rebuildFromNow(combined, personalProjects, newEnd, settings);
 
   return { extendedBlock: extended, subsequentBlocks: subsequent };
 }
 
-export function moveBlockEndAndReschedule(blocks, fixedEvents, reminderItems, now, move, settings) {
+export function moveBlockEndAndReschedule(blocks, fixedEvents, personalProjects, now, move, settings) {
   const target = findTargetBlock(blocks, now);
   if (!target) return null;
 
@@ -291,7 +343,7 @@ export function moveBlockEndAndReschedule(blocks, fixedEvents, reminderItems, no
   };
   const subsequent = rebuildFromNow(
     combined,
-    reminderItems,
+    personalProjects,
     newEnd,
     {
       ...settings,
@@ -308,7 +360,7 @@ export function moveBlockEndAndReschedule(blocks, fixedEvents, reminderItems, no
   };
 }
 
-export function addBreakAndReschedule(blocks, fixedEvents, reminderItems, now, minutes, settings) {
+export function addBreakAndReschedule(blocks, fixedEvents, personalProjects, now, minutes, settings) {
   const current = findTargetBlock(blocks, now);
   const completedBlock = current && current.start < now && current.end > now
     ? {
@@ -339,7 +391,7 @@ export function addBreakAndReschedule(blocks, fixedEvents, reminderItems, now, m
   const suppressFirstItemIds = current?.itemId ? [current.itemId] : [];
   const subsequent = rebuildFromNow(
     combined,
-    reminderItems,
+    personalProjects,
     end,
     { ...settings, suppressFirstItemIds },
   );

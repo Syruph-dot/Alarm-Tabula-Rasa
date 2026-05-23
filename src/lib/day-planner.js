@@ -1,6 +1,6 @@
 import { mergeHardEvents, calculateFreeIntervals } from './intervals.js';
 import { resolvePreferenceChoice } from './preference-sampler.js';
-import { rebuildFromNow } from '../prototypes/free-time-engine/engine.mjs';
+import { isNamePinEvent, rebuildFromNow } from '../prototypes/free-time-engine/engine.mjs';
 
 const DEFAULT_TIMEZONE_SUFFIX = '+08:00';
 
@@ -85,12 +85,13 @@ export function addTemporaryEvent(events, input) {
   ].sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
 }
 
-export function buildDayPlan(fixedEvents, reminderItems, now, settings) {
+export function buildDayPlan(fixedEvents, personalProjects, now, settings) {
   const date = settings.date;
   const { dayStart, dayEnd } = dateBounds(date, settings);
-  const merged = mergeHardEvents(fixedEvents);
+  const hardEvents = fixedEvents.filter(event => !isNamePinEvent(event));
+  const merged = mergeHardEvents(hardEvents);
   const freeIntervals = calculateFreeIntervals(merged, dayStart, dayEnd);
-  const softFillBlocks = rebuildFromNow(fixedEvents, reminderItems, now, settings);
+  const softFillBlocks = rebuildFromNow(fixedEvents, personalProjects, now, settings);
 
   return {
     date,
@@ -145,14 +146,14 @@ export function createLockedBlockEvent(input) {
 export function rebuildPlanAfterTemporaryEvent(
   fixedEvents,
   softFillBlocks,
-  reminderItems,
+  personalProjects,
   now,
   settings,
   eventInput,
 ) {
   const fixedEventsWithTemporary = addTemporaryEvent(fixedEvents, eventInput);
   const pastBlocks = softFillBlocks.filter(block => block.end <= now);
-  const nextPlan = buildDayPlan(fixedEventsWithTemporary, reminderItems, now, settings);
+  const nextPlan = buildDayPlan(fixedEventsWithTemporary, personalProjects, now, settings);
 
   return {
     ...nextPlan,
@@ -164,19 +165,19 @@ export function rebuildPlanAfterTemporaryEvent(
 export function rebuildPlanAfterPreferenceChoice(
   fixedEvents,
   softFillBlocks,
-  reminderItems,
+  personalProjects,
   comparisonHistory,
   now,
   settings,
   choiceInput,
 ) {
-  const preference = resolvePreferenceChoice(reminderItems, comparisonHistory, choiceInput);
+  const preference = resolvePreferenceChoice(personalProjects, comparisonHistory, choiceInput);
   const pastBlocks = softFillBlocks.filter(block => block.end <= now);
   const nextPlan = buildDayPlan(fixedEvents, preference.items, now, settings);
 
   return {
     ...nextPlan,
-    reminderItems: preference.items,
+    personalProjects: preference.items,
     comparisonHistory: preference.history,
     softFillBlocks: [...pastBlocks, ...nextPlan.softFillBlocks],
   };

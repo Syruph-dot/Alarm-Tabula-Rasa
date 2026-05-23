@@ -30,7 +30,7 @@ const fixedEvents = [
   },
 ];
 
-const reminderItems = [
+const personalProjects = [
   {
     id: 'item-a',
     label: '项目 A',
@@ -91,7 +91,7 @@ describe('temporary event insertion', () => {
 
   it('keeps past soft-fill blocks and regenerates only the future after insertion', () => {
     const now = new Date('2026-05-22T12:00:00+08:00');
-    const before = buildDayPlan(fixedEvents, reminderItems, now, settings);
+    const before = buildDayPlan(fixedEvents, personalProjects, now, settings);
     const pastBlock = {
       itemId: 'past',
       label: '已完成',
@@ -104,7 +104,7 @@ describe('temporary event insertion', () => {
     const result = rebuildPlanAfterTemporaryEvent(
       fixedEvents,
       [pastBlock, ...before.softFillBlocks],
-      reminderItems,
+      personalProjects,
       now,
       settings,
       {
@@ -126,7 +126,7 @@ describe('temporary event insertion', () => {
     const result = rebuildPlanAfterTemporaryEvent(
       fixedEvents,
       [],
-      reminderItems,
+      personalProjects,
       now,
       settings,
       {
@@ -146,7 +146,7 @@ describe('temporary event insertion', () => {
     const result = rebuildPlanAfterTemporaryEvent(
       fixedEvents,
       [],
-      reminderItems,
+      personalProjects,
       now,
       settings,
       {
@@ -169,7 +169,7 @@ describe('temporary event insertion', () => {
     const result = rebuildPlanAfterTemporaryEvent(
       fixedEvents,
       [],
-      reminderItems,
+      personalProjects,
       now,
       settings,
       {
