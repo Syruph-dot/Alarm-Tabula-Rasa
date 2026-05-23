@@ -41,6 +41,7 @@ function normalizeStore(raw) {
     reminderItems: raw.reminderItems ?? [],
     comparisonHistory: raw.comparisonHistory ?? [],
     generatedTables: raw.generatedTables ?? {},
+    courseWeeklySchedule: raw.courseWeeklySchedule ?? [],
     settings: {
       dayStart: '08:00',
       dayEnd: '23:00',
@@ -230,6 +231,17 @@ export function adjustFixedEventEnd(store, input = {}) {
   return updateFixedEventEnd(store, {
     eventId,
     endTime: minEnd,
+  });
+}
+
+export function clearAllData(store) {
+  return normalizeStore({
+    ...clone(store),
+    fixedEvents: {},
+    generatedTables: {},
+    reminderItems: [],
+    comparisonHistory: [],
+    courseWeeklySchedule: [],
   });
 }
 

@@ -8,6 +8,7 @@ import {
   adjustFixedEventEnd,
   archiveReminderItem,
   cancelFixedEvent,
+  clearAllData,
   ensureAppStore,
   loadAppStore,
   saveAppStore,
@@ -15,8 +16,8 @@ import {
   updateSettings,
 } from '../src/lib/app-store.js';
 import {
-  COURSE_TABLE_SCHEMA_ID,
-  importCourseTableJson,
+  COURSE_TABLE_WEEKLY_SCHEMA_ID,
+  importCourseWeeklySchedule,
 } from '../src/lib/course-table-import.js';
 
 async function tempDir() {
@@ -191,7 +192,7 @@ describe('app store', () => {
     );
   });
 
-  it('persists imported course table blocks through the app store', async () => {
+  it('persists imported weekly course schedule through the app store', async () => {
     const dir = await tempDir();
     try {
       const storePath = join(dir, 'data.json');
@@ -199,12 +200,12 @@ describe('app store', () => {
         userDataPath: dir,
         samplePath: './docs/sample-data/free-time-sample-2026-05-22.json',
       });
-      const imported = importCourseTableJson(store, JSON.stringify({
-        schema: COURSE_TABLE_SCHEMA_ID,
+      const imported = importCourseWeeklySchedule(store, JSON.stringify({
+        schema: COURSE_TABLE_WEEKLY_SCHEMA_ID,
         timezone: '+08:00',
         events: [
           {
-            date: '2026-05-22',
+            dayOfWeek: 3,
             title: '信号与系统',
             startTime: '13:30',
             endTime: '15:05',
@@ -216,12 +217,35 @@ describe('app store', () => {
       await saveAppStore(storePath, imported);
       const reloaded = await loadAppStore(storePath);
 
-      assert.ok(reloaded.fixedEvents['2026-05-22'].some(event => (
-        event.source === 'course-import'
-        && event.label === '信号与系统 @ A101'
+      assert.ok(reloaded.courseWeeklySchedule.some(entry => (
+        entry.dayOfWeek === 3
+        && entry.label === '信号与系统 @ A101'
       )));
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+
+  it('clearAllData resets fixedEvents, generatedTables, reminderItems, comparisonHistory, and courseWeeklySchedule', () => {
+    const store = {
+      version: 1,
+      fixedEvents: { '2026-05-22': [{ id: 'e1', label: 'Test', source: 'course-import' }] },
+      generatedTables: { '2026-05-22': [{ itemId: 'a', label: 'Fill' }] },
+      reminderItems: [{ id: 'r1', label: 'Reminder', active: true }],
+      comparisonHistory: [{ at: '2026-05-22T10:00:00+08:00', leftItemId: 'a', rightItemId: 'b', choice: 'left' }],
+      courseWeeklySchedule: [{ dayOfWeek: 1, label: 'Math', startTime: '09:00', endTime: '10:00' }],
+      settings: { dayStart: '08:00', dayEnd: '23:00' },
+      runtime: { timeMode: 'real', paused: false, itemCooldowns: [] },
+    };
+
+    const cleared = clearAllData(store);
+
+    assert.deepEqual(cleared.fixedEvents, {});
+    assert.deepEqual(cleared.generatedTables, {});
+    assert.deepEqual(cleared.reminderItems, []);
+    assert.deepEqual(cleared.comparisonHistory, []);
+    assert.deepEqual(cleared.courseWeeklySchedule, []);
+    assert.notEqual(cleared, store);
+    assert.equal(cleared.version, 1);
   });
 });

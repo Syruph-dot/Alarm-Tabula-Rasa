@@ -10,6 +10,7 @@ import {
 } from './day-planner.js';
 import { getDueAlarm, getNextAlarm } from './alarm-presenter.js';
 import { choosePreferencePair } from './preference-sampler.js';
+import { getCourseEventsForDate } from './course-table-import.js';
 
 function clone(value) {
   return structuredClone(value);
@@ -59,7 +60,11 @@ function activeItems(store) {
 export function buildRuntimeView(store, options = {}) {
   const now = runtimeNow(store, options);
   const date = options.date ?? localDateKey(now);
-  const fixedEvents = store.fixedEvents?.[date] ?? [];
+  const manualEvents = store.fixedEvents?.[date] ?? [];
+  const courseEvents = getCourseEventsForDate(store, date);
+  const fixedEvents = [...manualEvents, ...courseEvents].sort(
+    (a, b) => new Date(a.startTime) - new Date(b.startTime),
+  );
   const settings = planSettings(store, date);
   const planStart = options.fromNow ? now : dayStartFor(date, settings);
   const plan = buildDayPlan(fixedEvents, activeItems(store), planStart, settings);
@@ -72,6 +77,7 @@ export function buildRuntimeView(store, options = {}) {
     reminderItems: store.reminderItems,
     comparisonHistory: store.comparisonHistory ?? [],
     preferencePair,
+    courseWeeklySchedule: store.courseWeeklySchedule ?? [],
     timeMode: store.runtime?.timeMode ?? 'real',
     paused: store.runtime?.paused ?? false,
   };

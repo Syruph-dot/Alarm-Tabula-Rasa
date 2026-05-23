@@ -7,6 +7,7 @@ import {
   addReminderItem,
   adjustFixedEventEnd,
   cancelFixedEvent,
+  clearAllData,
   ensureAppStore,
   getDefaultStorePath,
   saveAppStore,
@@ -31,7 +32,7 @@ import {
 } from '../lib/alarm-presenter.js';
 import {
   clearImportedCourseTable,
-  importCourseTableJson,
+  importCourseWeeklySchedule,
 } from '../lib/course-table-import.js';
 import { createAlarmWindowOptions } from './alarm-window.js';
 import { createTrayShellState, getTrayMenuTemplate, updateTrayShellState } from '../lib/tray-shell.js';
@@ -59,6 +60,7 @@ let alarmState = null;
 let alarmTimer = null;
 let schedulerTimer = null;
 let lastMessage = '';
+let currentPage = 'day-plan';
 
 function htmlUrl(html) {
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
@@ -82,7 +84,7 @@ function safeSendReload() {
 function renderMain(message = lastMessage) {
   lastMessage = message ?? '';
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  mainWindow.loadURL(htmlUrl(renderMainHtml(currentView(), { message: lastMessage, storePath })));
+  mainWindow.loadURL(htmlUrl(renderMainHtml(currentView(), { message: lastMessage, storePath, page: currentPage })));
 }
 
 function renderTrayWidget(message = lastMessage) {
@@ -320,12 +322,12 @@ function registerIpc() {
 
   ipcMain.on('import-course-table', async (_event, input = {}) => {
     try {
-      const result = importCourseTableJson(store, input.json ?? '');
+      const result = importCourseWeeklySchedule(store, input.json ?? '');
       await persist(result.store);
       safeSendReload();
-      renderMain(`Imported ${result.importedCount} course blocks.`);
+      renderMain(`已导入 ${result.importedCount} 个课程条目。`);
     } catch (error) {
-      renderMain(`Import failed: ${error.message}`);
+      renderMain(`导入失败: ${error.message}`);
     }
   });
 
@@ -333,7 +335,36 @@ function registerIpc() {
     const result = clearImportedCourseTable(store);
     await persist(result.store);
     safeSendReload();
-    renderMain(`Cleared ${result.removedCount} imported course blocks.`);
+    renderMain(`已清空 ${result.removedCount} 个课程表块。`);
+  });
+
+  ipcMain.on('switch-page', async (_event, input) => {
+    currentPage = input.page ?? 'day-plan';
+    renderMain();
+  });
+
+  ipcMain.on('change-block-project', async (_event, input) => {
+    try {
+      const { start, end, newLabel } = input;
+      const date = start.slice(0, 10);
+      await persist(addFixedEvent(store, {
+        label: newLabel,
+        date,
+        startTime: start,
+        endTime: end,
+        source: 'project-pick',
+      }));
+      safeSendReload();
+      renderMain(`块已切换至: ${newLabel}`);
+    } catch (error) {
+      renderMain(`切换失败: ${error.message}`);
+    }
+  });
+
+  ipcMain.on('clear-all-data', async () => {
+    await persist(clearAllData(store));
+    safeSendReload();
+    renderMain('所有数据已清空。');
   });
 
   ipcMain.on('add-temporary-event', async (_event, input) => {
@@ -418,13 +449,16 @@ async function bootstrap() {
   const userDataPath = app.getPath('userData');
   storePath = getDefaultStorePath(userDataPath);
   store = await ensureAppStore({ userDataPath, samplePath });
+  // 清空所有导入的课程表和计划（用户要求先重置）
+  store = clearAllData(store);
+  await saveAppStore(storePath, store);
   shellState = createTrayShellState({ paused: store.runtime.paused });
   createMainWindow();
   createTrayWidgetWindow();
   createTray();
   registerIpc();
   startScheduler();
-  showMainWindow('Ready.');
+  showMainWindow('已清空所有数据，准备就绪。');
 }
 
 app.whenReady().then(bootstrap);

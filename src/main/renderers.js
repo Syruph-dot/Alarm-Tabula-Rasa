@@ -1,6 +1,6 @@
 import {
   COURSE_TABLE_AI_PROMPT,
-  COURSE_TABLE_SCHEMA_ID,
+  COURSE_TABLE_WEEKLY_SCHEMA_ID,
 } from '../lib/course-table-import.js';
 
 function esc(value) {
@@ -132,6 +132,19 @@ function shell({ title, body, script = '', compact = false }) {
     .primary-actions button { min-height: 42px; }
     .primary-actions .wide { grid-column: 1 / -1; }
     .toolbar { display: flex; gap: 8px; flex-wrap: wrap; }
+    .tabs { display: flex; gap: 2px; margin-bottom: 14px; border-bottom: 1px solid #2a333f; }
+    .tab { border: none; background: transparent; color: #96a1ae; padding: 8px 18px; cursor: pointer; font-size: 13px; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+    .tab:hover { color: #eef2f6; }
+    .tab.active { color: #eef2f6; border-bottom-color: #65c38f; }
+    .picker-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center; }
+    .picker-popup { background: #1a2128; border: 1px solid #384353; border-radius: 8px; padding: 16px; min-width: 260px; max-height: 70vh; overflow-y: auto; }
+    .picker-popup > strong { display: block; margin-bottom: 10px; font-size: 14px; }
+    .picker-item { display: block; width: 100%; text-align: left; padding: 8px 12px; border: 1px solid #29323e; border-radius: 6px; background: #13191f; margin-bottom: 6px; cursor: pointer; font-size: 13px; }
+    .picker-item:hover { background: #202832; border-color: #65c38f; }
+    .course-group { margin-bottom: 16px; }
+    .course-group h3 { font-size: 14px; color: #b8c1ce; margin: 0 0 8px; padding-bottom: 4px; border-bottom: 1px solid #29323e; }
+    .course-row { display: grid; grid-template-columns: 100px 1fr auto; gap: 8px; padding: 5px 0; border-bottom: 1px solid #1a2128; font-size: 13px; }
+    .course-row:last-child { border-bottom: none; }
     .compact main { padding: 10px; }
     .compact h1 { font-size: 15px; }
     .compact .panel { padding: 10px; border-radius: 7px; }
@@ -156,8 +169,10 @@ function renderDayPlanBlocks(blocks = [], now = null) {
   return blocks.map(block => {
     const classes = ['block', blockTimeState(block, now)];
     if (block.break) classes.push('break');
+    const startStr = block.start instanceof Date ? block.start.toISOString() : block.start;
+    const endStr = block.end instanceof Date ? block.end.toISOString() : block.end;
     return `
-    <div class="${classes.join(' ')}">
+    <div class="${classes.join(' ')}" data-block-start="${esc(startStr)}" data-block-end="${esc(endStr)}" onclick="openProjectPicker(this)">
       <strong>${time(block.start)}-${time(block.end)}</strong>
       <span>${esc(block.label)} <small class="muted">${block.durationMinutes ?? durationMinutes(block.start, block.end)}m</small></span>
     </div>
@@ -168,7 +183,7 @@ function renderDayPlanBlocks(blocks = [], now = null) {
 function renderReminderItems(items = []) {
   if (items.length === 0) return '<div class="muted">No reminder items.</div>';
   return items.map(item => `
-    <div class="item">
+    <div class="item"${item.active !== false ? ` data-project-label="${esc(item.label)}"` : ''}>
       <div>
         <strong>${esc(item.label)}</strong>
         <small>${item.active === false ? 'Archived' : 'Active'} / ${esc(item.defaultDurationMinutes ?? '')}m</small>
@@ -207,21 +222,74 @@ function renderCurrentActions(current) {
   `;
 }
 
+function renderCourseTablePage(schedule) {
+  if (!schedule || schedule.length === 0) return '<div class="muted">暂无课程表数据。</div>';
+  const dayNames = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+  const grouped = {};
+  for (const entry of schedule) {
+    const dayName = dayNames[entry.dayOfWeek] ?? `Day${entry.dayOfWeek}`;
+    if (!grouped[dayName]) grouped[dayName] = [];
+    grouped[dayName].push(entry);
+  }
+  const order = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+  return order.filter(d => grouped[d]).map(dayName => `
+    <div class="course-group">
+      <h3>${esc(dayName)}</h3>
+      ${grouped[dayName].map(entry => `
+        <div class="course-row">
+          <span class="muted">${entry.startTime}-${entry.endTime}</span>
+          <span>${esc(entry.label)}${entry.metadata?.location ? ' <span class="muted">@' + esc(entry.metadata.location) + '</span>' : ''}</span>
+          <span class="muted">${esc(entry.metadata?.teacher ?? '')}</span>
+        </div>
+      `).join('')}
+    </div>
+  `).join('');
+}
+
+function renderProjectPage(view) {
+  const items = view.reminderItems ?? [];
+  if (items.length === 0) return '<div class="muted">暂无个人项目。</div>';
+  return items.map(item => `
+    <div class="item"${item.active !== false ? ` data-project-label="${esc(item.label)}"` : ''}>
+      <div>
+        <strong>${esc(item.label)}</strong>
+        <small>${item.active === false ? '已归档' : '进行中'} / ${esc(item.defaultDurationMinutes ?? '')}m</small>
+      </div>
+      ${item.active === false
+        ? `<button onclick="send('add-reminder', { id: '${esc(item.id)}', label: '${esc(item.label)}', defaultDurationMinutes: ${item.defaultDurationMinutes ?? 30}, active: true })">激活</button>`
+        : `<button onclick="send('archive-reminder', { itemId: '${esc(item.id)}' })">归档</button>`}
+    </div>
+  `).join('');
+}
+
 export function renderMainHtml(view, options = {}) {
   const dayPlanBlocks = combinedDayPlanBlocks(view);
-  const body = `<main>
-    <div class="top">
-      <div>
-        <h1>Tabula Rasa</h1>
-        <div class="meta">${esc(view.date)} / ${time(view.now)} / ${esc(view.timeMode)} / ${view.paused ? 'paused' : 'running'}</div>
-      </div>
-      <div class="toolbar">
-        <button data-action="set-time-mode" onclick="send('set-time-mode', { timeMode: 'real' })">Real</button>
-        <button data-action="set-time-mode" onclick="send('set-time-mode', { timeMode: 'mock', mockNow: byId('mockNow').value })">Mock</button>
-        <button onclick="send('open-tray-widget')">Quick</button>
-      </div>
+  const page = options.page ?? 'day-plan';
+  const pageContent = page === 'courses' ? `
+    <div class="grid" style="grid-template-columns:1fr">
+      <section class="panel">
+        <h2>课程表</h2>
+        ${renderCourseTablePage(view.courseWeeklySchedule)}
+        <div class="row section">
+          <button onclick="send('clear-course-table')">清空课程表</button>
+        </div>
+      </section>
     </div>
-    <div class="message">${esc(options.message ?? '')}</div>
+  ` : page === 'projects' ? `
+    <div class="grid" style="grid-template-columns:1fr">
+      <section class="panel">
+        <h2>个人项目</h2>
+        <div class="fields" style="margin-bottom:12px">
+          <label>项目名称<input id="projectLabel" placeholder="项目名称"></label>
+          <label>时长(分)<input id="projectDuration" type="number" value="${esc(view.settings.defaultReminderDurationMinutes ?? 30)}"></label>
+        </div>
+        <div class="row section">
+          <button onclick="send('add-reminder', { label: byId('projectLabel').value, defaultDurationMinutes: Number(byId('projectDuration').value) })">添加项目</button>
+        </div>
+        <div class="list section">${renderProjectPage(view)}</div>
+      </section>
+    </div>
+  ` : `
     <div class="grid">
       <section class="panel">
         <h2>Day Plan</h2>
@@ -256,12 +324,12 @@ export function renderMainHtml(view, options = {}) {
           <label>AI prompt<textarea id="courseTablePrompt" readonly>${esc(COURSE_TABLE_AI_PROMPT)}</textarea></label>
           <div class="row section">
             <button onclick="copyText('courseTablePrompt')">Copy prompt</button>
-            <span class="muted">Schema: ${esc(COURSE_TABLE_SCHEMA_ID)}</span>
+            <span class="muted">Schema: ${esc(COURSE_TABLE_WEEKLY_SCHEMA_ID)}</span>
           </div>
-          <label class="section">Generated JSON<textarea id="courseTableJson" placeholder="{ &quot;schema&quot;: &quot;${esc(COURSE_TABLE_SCHEMA_ID)}&quot;, &quot;timezone&quot;: &quot;+08:00&quot;, &quot;events&quot;: [] }"></textarea></label>
+          <label class="section">Generated JSON<textarea id="courseTableJson" placeholder="{ &quot;schema&quot;: &quot;${esc(COURSE_TABLE_WEEKLY_SCHEMA_ID)}&quot;, &quot;timezone&quot;: &quot;+08:00&quot;, &quot;events&quot;: [] }"></textarea></label>
           <div class="row section">
             <button data-action="import-course-table" onclick="send('import-course-table', { json: byId('courseTableJson').value })">Import JSON</button>
-            <button data-action="clear-course-table" onclick="send('clear-course-table')">Clear imported courses</button>
+            <button data-action="clear-course-table" onclick="send('clear-course-table')">清空课程表</button>
           </div>
         </section>
         <section class="panel section">
@@ -278,11 +346,41 @@ export function renderMainHtml(view, options = {}) {
         </section>
       </aside>
     </div>
+  `;
+
+  const body = `<main>
+    <div class="top">
+      <div>
+        <h1>Tabula Rasa</h1>
+        <div class="meta">${esc(view.date)} / ${time(view.now)} / ${esc(view.timeMode)} / ${view.paused ? 'paused' : 'running'}</div>
+      </div>
+      <div class="toolbar">
+        <button data-action="set-time-mode" onclick="send('set-time-mode', { timeMode: 'real' })">Real</button>
+        <button data-action="set-time-mode" onclick="send('set-time-mode', { timeMode: 'mock', mockNow: byId('mockNow').value })">Mock</button>
+        <button onclick="send('open-tray-widget')">Quick</button>
+      </div>
+    </div>
+    <nav class="tabs">
+      <button class="tab${page === 'day-plan' ? ' active' : ''}" onclick="send('switch-page', { page: 'day-plan' })">Day Plan</button>
+      <button class="tab${page === 'courses' ? ' active' : ''}" onclick="send('switch-page', { page: 'courses' })">课程表</button>
+      <button class="tab${page === 'projects' ? ' active' : ''}" onclick="send('switch-page', { page: 'projects' })">个人项目</button>
+    </nav>
+    <div class="message">${esc(options.message ?? '')}</div>
+    ${pageContent}
+    <div id="projectPicker" class="picker-overlay" style="display:none" onclick="if(event.target===this)closeProjectPicker()">
+      <div class="picker-popup">
+        <strong>选择项目</strong>
+        <div id="pickerList"></div>
+        <button style="margin-top:8px;width:100%" onclick="closeProjectPicker()">取消</button>
+      </div>
+    </div>
   </main>`;
   return shell({
     title: 'Tabula Rasa',
     body,
     script: `
+var _pickerStart = null;
+var _pickerEnd = null;
 function localToIso(value) {
   if (!value) return null;
   return new Date(value).toISOString();
@@ -292,6 +390,31 @@ function copyText(id) {
   if (!element) return;
   element.select();
   document.execCommand('copy');
+}
+function openProjectPicker(blockEl) {
+  _pickerStart = blockEl.getAttribute('data-block-start');
+  _pickerEnd = blockEl.getAttribute('data-block-end');
+  var list = document.getElementById('pickerList');
+  var items = document.querySelectorAll('[data-project-label]');
+  list.innerHTML = '';
+  items.forEach(function(el) {
+    var label = el.getAttribute('data-project-label');
+    var btn = document.createElement('button');
+    btn.className = 'picker-item';
+    btn.textContent = label;
+    btn.onclick = function() {
+      if (_pickerStart && _pickerEnd) send('change-block-project', { start: _pickerStart, end: _pickerEnd, newLabel: label });
+      closeProjectPicker();
+    };
+    list.appendChild(btn);
+  });
+  if (list.children.length === 0) list.innerHTML = '<div class="muted">暂无可用项目</div>';
+  document.getElementById('projectPicker').style.display = 'flex';
+}
+function closeProjectPicker() {
+  document.getElementById('projectPicker').style.display = 'none';
+  _pickerStart = null;
+  _pickerEnd = null;
 }
 `,
   });

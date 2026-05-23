@@ -62,10 +62,17 @@ describe('electron renderers', () => {
     assert.match(html, /Course Table Import/);
     assert.match(html, /data-action="import-course-table"/);
     assert.match(html, /data-action="clear-course-table"/);
+    assert.match(html, /清空课程表/);
     assert.match(html, /id="courseTableJson"/);
     assert.match(html, /id="courseTablePrompt"/);
     assert.match(html, /Copy prompt/);
-    assert.match(html, /course-table-v1/);
+    assert.match(html, /course-table-weekly-v1/);
+    assert.match(html, /data-block-start/);
+    assert.match(html, /data-block-end/);
+    assert.match(html, /openProjectPicker/);
+    assert.match(html, /class="tab"/);
+    assert.match(html, /课程表/);
+    assert.match(html, /个人项目/);
     assert.doesNotMatch(html, />Add Fixed Event</);
     assert.doesNotMatch(html, />Add fixed</);
     assert.doesNotMatch(html, /score 1500/);
