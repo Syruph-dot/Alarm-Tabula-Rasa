@@ -57,6 +57,7 @@ function normalizeStore(raw) {
     personalProjects: raw.personalProjects ?? raw.reminderItems ?? [],
     comparisonHistory: raw.comparisonHistory ?? [],
     generatedTables: raw.generatedTables ?? {},
+    reminders: raw.reminders ?? [],
     courseWeeklySchedule: raw.courseWeeklySchedule ?? [],
     settings: {
       ...settings,
@@ -245,12 +246,140 @@ export function adjustFixedEventEnd(store, input = {}) {
   });
 }
 
+export function createReminder(store, input) {
+  const title = String(input.title ?? '').trim();
+  if (!title) throw new Error('title is required');
+  if (!input.dueAt) throw new Error('dueAt is required');
+
+  const now = formatLocalDateTime(new Date());
+  const reminder = {
+    id: `rem-${slug(title)}-${Date.now().toString(36)}`,
+    title,
+    dueAt: formatLocalDateTime(new Date(input.dueAt)),
+    status: 'scheduled',
+    createdAt: now,
+    updatedAt: now,
+    archivedAt: null,
+    snoozeHistory: [],
+    closeCount: 0,
+  };
+
+  return normalizeStore({
+    ...store,
+    reminders: [...store.reminders, reminder],
+  });
+}
+
+export function snoozeReminder(store, input) {
+  const id = String(input.id ?? '').trim();
+  if (!id) throw new Error('id is required');
+  if (!input.newDueAt) throw new Error('newDueAt is required');
+
+  const newDueAt = formatLocalDateTime(new Date(input.newDueAt));
+  const now = formatLocalDateTime(new Date());
+  let found = false;
+
+  const reminders = store.reminders.map(reminder => {
+    if (reminder.id !== id) return reminder;
+    found = true;
+    return {
+      ...reminder,
+      dueAt: newDueAt,
+      status: 'snoozed',
+      updatedAt: now,
+      snoozeHistory: [
+        ...reminder.snoozeHistory,
+        { from: reminder.dueAt, to: newDueAt, at: now },
+      ],
+    };
+  });
+
+  if (!found) throw new Error('reminder not found');
+  return normalizeStore({ ...store, reminders });
+}
+
+export function startReminder(store, input) {
+  const id = String(input.id ?? '').trim();
+  if (!id) throw new Error('id is required');
+
+  const now = formatLocalDateTime(new Date());
+  let found = false;
+
+  const reminders = store.reminders.map(reminder => {
+    if (reminder.id !== id) return reminder;
+    found = true;
+    return {
+      ...reminder,
+      status: 'started',
+      closeCount: 0,
+      updatedAt: now,
+    };
+  });
+
+  if (!found) throw new Error('reminder not found');
+  return normalizeStore({ ...store, reminders });
+}
+
+export function archiveReminder(store, input) {
+  const id = String(input.id ?? '').trim();
+  if (!id) throw new Error('id is required');
+
+  const now = formatLocalDateTime(new Date());
+  let found = false;
+
+  const reminders = store.reminders.map(reminder => {
+    if (reminder.id !== id) return reminder;
+    found = true;
+    return {
+      ...reminder,
+      archivedAt: now,
+      updatedAt: now,
+    };
+  });
+
+  if (!found) throw new Error('reminder not found');
+  return normalizeStore({ ...store, reminders });
+}
+
+export function editReminder(store, input) {
+  const id = String(input.id ?? '').trim();
+  if (!id) throw new Error('id is required');
+
+  const now = formatLocalDateTime(new Date());
+  let found = false;
+
+  const reminders = store.reminders.map(reminder => {
+    if (reminder.id !== id) return reminder;
+    found = true;
+    return {
+      ...reminder,
+      ...(input.title ? { title: String(input.title).trim() } : {}),
+      ...(input.dueAt ? { dueAt: formatLocalDateTime(new Date(input.dueAt)) } : {}),
+      updatedAt: now,
+    };
+  });
+
+  if (!found) throw new Error('reminder not found');
+  return normalizeStore({ ...store, reminders });
+}
+
+export function listReminders(store, { includeArchived = false } = {}) {
+  return store.reminders
+    .filter(reminder => includeArchived || !reminder.archivedAt)
+    .sort((a, b) => {
+      const dueCmp = new Date(a.dueAt) - new Date(b.dueAt);
+      if (dueCmp !== 0) return dueCmp;
+      return new Date(a.createdAt) - new Date(b.createdAt);
+    });
+}
+
 export function clearAllData(store) {
   return normalizeStore({
     ...clone(store),
     fixedEvents: {},
     generatedTables: {},
     personalProjects: [],
+    reminders: [],
     comparisonHistory: [],
     courseWeeklySchedule: [],
   });

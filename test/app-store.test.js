@@ -7,11 +7,17 @@ import {
   addPersonalProject,
   adjustFixedEventEnd,
   archivePersonalProject,
+  archiveReminder,
   cancelFixedEvent,
   clearAllData,
+  createReminder,
+  editReminder,
   ensureAppStore,
+  listReminders,
   loadAppStore,
   saveAppStore,
+  snoozeReminder,
+  startReminder,
   updateFixedEventEnd,
   updateSettings,
 } from '../src/lib/app-store.js';
@@ -272,5 +278,180 @@ describe('app store', () => {
     assert.equal(updated.settings.transitionEffectId, 'blue-archive.sweep-1');
     assert.equal(updated.settings.transitionTriangleSizePx, 88);
     assert.equal(updated.settings.transitionTiltDeg, -21);
+  });
+
+  it('creates a reminder and persists title, dueAt, and default fields', () => {
+    const store = {
+      version: 1,
+      fixedEvents: {},
+      personalProjects: [],
+      reminders: [],
+      comparisonHistory: [],
+      generatedTables: {},
+      settings: {},
+      runtime: { timeMode: 'real', paused: false, itemCooldowns: [] },
+    };
+
+    const result = createReminder(store, {
+      title: 'Test reminder',
+      dueAt: '2026-05-24T14:00:00+08:00',
+    });
+
+    assert.equal(result.reminders.length, 1);
+    assert.equal(result.reminders[0].title, 'Test reminder');
+    assert.equal(result.reminders[0].dueAt, '2026-05-24T14:00:00+08:00');
+    assert.equal(result.reminders[0].status, 'scheduled');
+    assert.equal(result.reminders[0].archivedAt, null);
+    assert.equal(result.reminders[0].closeCount, 0);
+    assert.deepEqual(result.reminders[0].snoozeHistory, []);
+    assert.ok(result.reminders[0].id);
+    assert.ok(result.reminders[0].createdAt);
+    assert.ok(result.reminders[0].updatedAt);
+  });
+
+  it('validates title and dueAt are required for creation', () => {
+    const store = {
+      version: 1,
+      fixedEvents: {},
+      personalProjects: [],
+      reminders: [],
+      comparisonHistory: [],
+      generatedTables: {},
+      settings: {},
+      runtime: { timeMode: 'real', paused: false, itemCooldowns: [] },
+    };
+
+    assert.throws(() => createReminder(store, { dueAt: '2026-05-24T14:00:00+08:00' }), /title/);
+    assert.throws(() => createReminder(store, { title: 'Test' }), /dueAt/);
+  });
+
+  it('snoozes a reminder: updates dueAt, status, and appends to snoozeHistory', () => {
+    const store = {
+      version: 1,
+      fixedEvents: {},
+      personalProjects: [],
+      reminders: [
+        { id: 'rem-1', title: 'Test', dueAt: '2026-05-24T14:00:00+08:00', status: 'scheduled', createdAt: '2026-05-24T13:00:00+08:00', updatedAt: '2026-05-24T13:00:00+08:00', archivedAt: null, snoozeHistory: [], closeCount: 0 },
+      ],
+      comparisonHistory: [],
+      generatedTables: {},
+      settings: {},
+      runtime: { timeMode: 'real', paused: false, itemCooldowns: [] },
+    };
+
+    const result = snoozeReminder(store, {
+      id: 'rem-1',
+      newDueAt: '2026-05-24T14:15:00+08:00',
+    });
+
+    assert.equal(result.reminders[0].dueAt, '2026-05-24T14:15:00+08:00');
+    assert.equal(result.reminders[0].status, 'snoozed');
+    assert.equal(result.reminders[0].snoozeHistory.length, 1);
+    assert.equal(result.reminders[0].snoozeHistory[0].from, '2026-05-24T14:00:00+08:00');
+    assert.equal(result.reminders[0].snoozeHistory[0].to, '2026-05-24T14:15:00+08:00');
+  });
+
+  it('starts a reminder: sets status to started and resets closeCount', () => {
+    const store = {
+      version: 1,
+      fixedEvents: {},
+      personalProjects: [],
+      reminders: [
+        { id: 'rem-1', title: 'Test', dueAt: '2026-05-24T14:00:00+08:00', status: 'scheduled', createdAt: '2026-05-24T13:00:00+08:00', updatedAt: '2026-05-24T13:00:00+08:00', archivedAt: null, snoozeHistory: [], closeCount: 3 },
+      ],
+      comparisonHistory: [],
+      generatedTables: {},
+      settings: {},
+      runtime: { timeMode: 'real', paused: false, itemCooldowns: [] },
+    };
+
+    const result = startReminder(store, { id: 'rem-1' });
+
+    assert.equal(result.reminders[0].status, 'started');
+    assert.equal(result.reminders[0].closeCount, 0);
+  });
+
+  it('archives a reminder: sets archivedAt, keeps status intact', () => {
+    const store = {
+      version: 1,
+      fixedEvents: {},
+      personalProjects: [],
+      reminders: [
+        { id: 'rem-1', title: 'Test', dueAt: '2026-05-24T14:00:00+08:00', status: 'scheduled', createdAt: '2026-05-24T13:00:00+08:00', updatedAt: '2026-05-24T13:00:00+08:00', archivedAt: null, snoozeHistory: [], closeCount: 0 },
+      ],
+      comparisonHistory: [],
+      generatedTables: {},
+      settings: {},
+      runtime: { timeMode: 'real', paused: false, itemCooldowns: [] },
+    };
+
+    const result = archiveReminder(store, { id: 'rem-1' });
+
+    assert.ok(result.reminders[0].archivedAt);
+    assert.equal(result.reminders[0].status, 'scheduled');
+  });
+
+  it('edits a reminder: updates title and/or dueAt', () => {
+    const store = {
+      version: 1,
+      fixedEvents: {},
+      personalProjects: [],
+      reminders: [
+        { id: 'rem-1', title: 'Old title', dueAt: '2026-05-24T14:00:00+08:00', status: 'scheduled', createdAt: '2026-05-24T13:00:00+08:00', updatedAt: '2026-05-24T13:00:00+08:00', archivedAt: null, snoozeHistory: [], closeCount: 0 },
+      ],
+      comparisonHistory: [],
+      generatedTables: {},
+      settings: {},
+      runtime: { timeMode: 'real', paused: false, itemCooldowns: [] },
+    };
+
+    const titleOnly = editReminder(store, { id: 'rem-1', title: 'New title' });
+    assert.equal(titleOnly.reminders[0].title, 'New title');
+    assert.equal(titleOnly.reminders[0].dueAt, '2026-05-24T14:00:00+08:00');
+
+    const dueOnly = editReminder(store, { id: 'rem-1', dueAt: '2026-05-25T10:00:00+08:00' });
+    assert.equal(dueOnly.reminders[0].title, 'Old title');
+    assert.equal(dueOnly.reminders[0].dueAt, '2026-05-25T10:00:00+08:00');
+  });
+
+  it('lists non-archived reminders sorted by dueAt then createdAt', () => {
+    const store = {
+      version: 1,
+      fixedEvents: {},
+      personalProjects: [],
+      reminders: [
+        { id: 'rem-1', title: 'Later', dueAt: '2026-05-24T15:00:00+08:00', status: 'scheduled', createdAt: '2026-05-24T13:00:00+08:00', updatedAt: '2026-05-24T13:00:00+08:00', archivedAt: null, snoozeHistory: [], closeCount: 0 },
+        { id: 'rem-2', title: 'Earlier', dueAt: '2026-05-24T14:00:00+08:00', status: 'scheduled', createdAt: '2026-05-24T13:00:00+08:00', updatedAt: '2026-05-24T13:00:00+08:00', archivedAt: null, snoozeHistory: [], closeCount: 0 },
+        { id: 'rem-3', title: 'Archived', dueAt: '2026-05-24T12:00:00+08:00', status: 'scheduled', createdAt: '2026-05-24T13:00:00+08:00', updatedAt: '2026-05-24T13:00:00+08:00', archivedAt: '2026-05-24T13:30:00+08:00', snoozeHistory: [], closeCount: 0 },
+      ],
+      comparisonHistory: [],
+      generatedTables: {},
+      settings: {},
+      runtime: { timeMode: 'real', paused: false, itemCooldowns: [] },
+    };
+
+    const active = listReminders(store);
+    assert.equal(active.length, 2);
+    assert.equal(active[0].id, 'rem-2');
+    assert.equal(active[1].id, 'rem-1');
+
+    const all = listReminders(store, { includeArchived: true });
+    assert.equal(all.length, 3);
+  });
+
+  it('normalizes store with missing reminders key to empty array', async () => {
+    const dir = await tempDir();
+    try {
+      const storePath = join(dir, 'data.json');
+      const store = await ensureAppStore({
+        userDataPath: dir,
+        samplePath: './docs/sample-data/free-time-sample-2026-05-22.json',
+      });
+
+      assert.deepEqual(store.reminders, []);
+      assert.equal(Array.isArray(store.reminders), true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
