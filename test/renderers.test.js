@@ -58,6 +58,18 @@ describe('electron renderers', () => {
     assert.match(html, />Add Time Block</);
     assert.match(html, />Add time</);
     assert.match(html, /data-action="update-settings"/);
+    assert.match(html, /<details class="settings-group" open>/);
+    assert.match(html, /<summary>Transition<\/summary>/);
+    assert.match(html, /id="transitionEffect"/);
+    assert.match(html, /<optgroup label="基础">/);
+    assert.match(html, /value="base\.black-sweep"/);
+    assert.match(html, /黑屏扫屏/);
+    assert.match(html, /<optgroup label="蔚蓝档案">/);
+    assert.match(html, /value="blue-archive\.sweep-1"/);
+    assert.match(html, /扫屏1/);
+    assert.match(html, /id="transitionTriangleSize"/);
+    assert.match(html, /id="transitionTriangleSize"[^>]*value="112"/);
+    assert.match(html, /id="transitionTilt"/);
     assert.match(html, /data-action="set-time-mode"/);
     assert.match(html, /Course Table Import/);
     assert.match(html, /data-action="import-course-table"/);

@@ -1,6 +1,10 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import {
+  DEFAULT_TRANSITION_SETTINGS,
+  normalizeTransitionSettings,
+} from './transition-effects.js';
 
 const DEFAULT_VERSION = 1;
 const DEFAULT_TZ = '+08:00';
@@ -34,6 +38,18 @@ function slug(value, fallback = 'item') {
 }
 
 function normalizeStore(raw) {
+  const settings = {
+    dayStart: '08:00',
+    dayEnd: '23:00',
+    alarmSeconds: 30,
+    clickToDismiss: true,
+    defaultReminderDurationMinutes: 30,
+    minimumFillMinutes: 15,
+    defaultEarlyEndCooldownMinutes: 180,
+    reminderLeadMinutes: 0,
+    ...DEFAULT_TRANSITION_SETTINGS,
+    ...raw.settings,
+  };
   return {
     version: raw.version ?? DEFAULT_VERSION,
     metadata: raw.metadata ?? {},
@@ -43,15 +59,8 @@ function normalizeStore(raw) {
     generatedTables: raw.generatedTables ?? {},
     courseWeeklySchedule: raw.courseWeeklySchedule ?? [],
     settings: {
-      dayStart: '08:00',
-      dayEnd: '23:00',
-      alarmSeconds: 30,
-      clickToDismiss: true,
-      defaultReminderDurationMinutes: 30,
-      minimumFillMinutes: 15,
-      defaultEarlyEndCooldownMinutes: 180,
-      reminderLeadMinutes: 0,
-      ...raw.settings,
+      ...settings,
+      ...normalizeTransitionSettings(settings),
     },
     runtime: {
       timeMode: 'real',

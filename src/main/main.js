@@ -247,6 +247,9 @@ function showAlarm(alarm) {
     seconds: view.settings.alarmSeconds ?? 30,
     now: view.now,
     clickToDismiss: view.settings.clickToDismiss !== false,
+    transitionEffectId: view.settings.transitionEffectId,
+    transitionTriangleSizePx: view.settings.transitionTriangleSizePx,
+    transitionTiltDeg: view.settings.transitionTiltDeg,
   });
 
   const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;

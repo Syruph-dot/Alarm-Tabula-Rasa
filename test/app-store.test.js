@@ -69,6 +69,9 @@ describe('app store', () => {
       assert.equal(reloaded.runtime.timeMode, 'mock');
       assert.equal(reloaded.runtime.mockNow, '2026-05-22T12:34:00+08:00');
       assert.equal(reloaded.settings.defaultEarlyEndCooldownMinutes, 90);
+      assert.equal(reloaded.settings.transitionEffectId, 'base.black-sweep');
+      assert.equal(reloaded.settings.transitionTriangleSizePx, 112);
+      assert.equal(reloaded.settings.transitionTiltDeg, -12);
       assert.ok(reloaded.reminderItems.some(item => item.label === 'New task'));
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -247,5 +250,27 @@ describe('app store', () => {
     assert.deepEqual(cleared.courseWeeklySchedule, []);
     assert.notEqual(cleared, store);
     assert.equal(cleared.version, 1);
+  });
+
+  it('normalizes transition effect settings from updates', () => {
+    const store = {
+      version: 1,
+      fixedEvents: {},
+      reminderItems: [],
+      comparisonHistory: [],
+      generatedTables: {},
+      settings: {},
+      runtime: { timeMode: 'real', paused: false, itemCooldowns: [] },
+    };
+
+    const updated = updateSettings(store, {
+      transitionEffectId: 'blue-archive.sweep-1',
+      transitionTriangleSizePx: '88',
+      transitionTiltDeg: '-21',
+    });
+
+    assert.equal(updated.settings.transitionEffectId, 'blue-archive.sweep-1');
+    assert.equal(updated.settings.transitionTriangleSizePx, 88);
+    assert.equal(updated.settings.transitionTiltDeg, -21);
   });
 });

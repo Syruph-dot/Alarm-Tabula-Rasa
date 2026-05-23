@@ -188,6 +188,36 @@ describe('alarm presenter', () => {
     assert.match(html, /clip-path:\s*inset\(0 0 0 100%\)/);
   });
 
+  it('renders the Blue Archive sweep as an eased equilateral-triangle screen wipe', () => {
+    const state = createAlarmState({
+      alarm: getNextAlarm(blocks, new Date('2026-05-22T12:30:00+08:00')),
+      seconds: 30,
+      now: new Date('2026-05-22T12:30:00+08:00'),
+      transitionEffectId: 'blue-archive.sweep-1',
+      transitionTriangleSizePx: 112,
+      transitionTiltDeg: -16,
+      transitionViewportWidth: 1280,
+      transitionViewportHeight: 720,
+    });
+    const html = renderAlarmHtml(state);
+
+    assert.match(html, /ba-triangle-sweep/);
+    assert.match(html, /--triangle-size:\s*112px/);
+    assert.match(html, /--triangle-height:\s*96\.995/);
+    assert.match(html, /--grid-tilt:\s*-16deg/);
+    assert.match(html, /--tri-points:50% 0,\s*100% 100%,\s*0 100%/);
+    assert.match(html, /--tri-points:0 0,\s*100% 0,\s*50% 100%/);
+    assert.match(html, /--cx:/);
+    assert.match(html, /--cy:/);
+    assert.match(html, /--scale:/);
+    assert.match(html, /--sweep-softness:/);
+    assert.match(html, /clip-path:\s*polygon\(var\(--tri-points\)\)/);
+    assert.match(html, /animation:\s*baDomainIn .* var\(--syr-push-strong\) both/);
+    assert.match(html, /transform:\s*translate\(var\(--x\), var\(--y\)\) scale\(var\(--scale\)\)/);
+    assert.doesNotMatch(html, /\.alarm-screen\.sweeping-in \.ba-triangle-sweep \{\s*animation:/);
+    assert.doesNotMatch(html, /35\.5%|66\.7%|phaseProgress|black phase/i);
+  });
+
   it('does not refresh the full alarm page while the sweep-in animation is still running', () => {
     const state = createAlarmState({
       alarm: getNextAlarm(blocks, new Date('2026-05-22T12:30:00+08:00')),

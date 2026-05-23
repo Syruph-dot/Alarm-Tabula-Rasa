@@ -2,6 +2,10 @@ import {
   COURSE_TABLE_AI_PROMPT,
   COURSE_TABLE_WEEKLY_SCHEMA_ID,
 } from '../lib/course-table-import.js';
+import {
+  DEFAULT_TRANSITION_SETTINGS,
+  transitionEffectsByGroup,
+} from '../lib/transition-effects.js';
 
 function esc(value) {
   return String(value ?? '')
@@ -161,6 +165,10 @@ function shell({ title, body, script = '', compact = false }) {
     .picker-item { display: block; width: 100%; text-align: left; padding: 8px 12px; border: 1px solid #29323e; border-radius: 6px; background: #13191f; margin-bottom: 6px; cursor: pointer; font-size: 13px; }
     .picker-item:hover { background: #202832; border-color: #65c38f; }
     .picker-new { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-bottom: 12px; }
+    .settings-stack { display: grid; gap: 10px; }
+    .settings-group { border: 1px solid #29323e; border-radius: 7px; padding: 8px; background: #141a21; }
+    .settings-group summary { cursor: pointer; color: #eef2f6; font-weight: 600; font-size: 13px; }
+    .settings-group .fields { margin-top: 8px; }
     .course-group { margin-bottom: 16px; }
     .course-group h3 { font-size: 14px; color: #b8c1ce; margin: 0 0 8px; padding-bottom: 4px; border-bottom: 1px solid #29323e; }
     .course-row { display: grid; grid-template-columns: 100px 1fr auto; gap: 8px; padding: 5px 0; border-bottom: 1px solid #1a2128; font-size: 13px; }
@@ -290,6 +298,14 @@ function renderProjectPage(view) {
   `).join('');
 }
 
+function renderTransitionOptions(selectedId) {
+  return transitionEffectsByGroup().map(group => `
+              <optgroup label="${esc(group.label)}">
+                ${group.effects.map(effect => `<option value="${esc(effect.id)}"${effect.id === selectedId ? ' selected' : ''}>${esc(effect.label)}</option>`).join('')}
+              </optgroup>
+  `).join('');
+}
+
 export function renderMainHtml(view, options = {}) {
   const dayPlanBlocks = combinedDayPlanBlocks(view);
   const page = options.page ?? 'day-plan';
@@ -326,14 +342,27 @@ export function renderMainHtml(view, options = {}) {
       <aside>
         <section class="panel">
           <h2>Settings</h2>
-          <div class="fields">
-            <label>Mock now<input id="mockNow" type="datetime-local" value="${esc(isoLocalInput(view.now))}"></label>
-            <label>Cooldown minutes<input id="cooldown" type="number" value="${esc(view.settings.defaultEarlyEndCooldownMinutes ?? 180)}"></label>
-            <label>Day start<input id="dayStart" value="${esc(view.settings.dayStart ?? '08:00')}"></label>
-            <label>Day end<input id="dayEnd" value="${esc(view.settings.dayEnd ?? '23:00')}"></label>
+          <div class="settings-stack">
+            <details class="settings-group" open>
+              <summary>Schedule</summary>
+              <div class="fields">
+                <label>Mock now<input id="mockNow" type="datetime-local" value="${esc(isoLocalInput(view.now))}"></label>
+                <label>Cooldown minutes<input id="cooldown" type="number" value="${esc(view.settings.defaultEarlyEndCooldownMinutes ?? 180)}"></label>
+                <label>Day start<input id="dayStart" value="${esc(view.settings.dayStart ?? '08:00')}"></label>
+                <label>Day end<input id="dayEnd" value="${esc(view.settings.dayEnd ?? '23:00')}"></label>
+              </div>
+            </details>
+            <details class="settings-group" open>
+              <summary>Transition</summary>
+              <div class="fields">
+                <label>Effect<select id="transitionEffect">${renderTransitionOptions(view.settings.transitionEffectId)}</select></label>
+                <label>Triangle size<input id="transitionTriangleSize" type="number" min="24" max="180" value="${esc(view.settings.transitionTriangleSizePx ?? DEFAULT_TRANSITION_SETTINGS.transitionTriangleSizePx)}"></label>
+                <label>Tilt angle<input id="transitionTilt" type="number" min="-45" max="45" value="${esc(view.settings.transitionTiltDeg ?? DEFAULT_TRANSITION_SETTINGS.transitionTiltDeg)}"></label>
+              </div>
+            </details>
           </div>
           <div class="row section">
-            <button data-action="update-settings" onclick="send('update-settings', { mockNow: localToIso(byId('mockNow').value), defaultEarlyEndCooldownMinutes: Number(byId('cooldown').value), dayStart: byId('dayStart').value, dayEnd: byId('dayEnd').value })">Save settings</button>
+            <button data-action="update-settings" onclick="send('update-settings', { mockNow: localToIso(byId('mockNow').value), defaultEarlyEndCooldownMinutes: Number(byId('cooldown').value), dayStart: byId('dayStart').value, dayEnd: byId('dayEnd').value, transitionEffectId: byId('transitionEffect').value, transitionTriangleSizePx: Number(byId('transitionTriangleSize').value), transitionTiltDeg: Number(byId('transitionTilt').value) })">Save settings</button>
           </div>
         </section>
         <section class="panel section">
