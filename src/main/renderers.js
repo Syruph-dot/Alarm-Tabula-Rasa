@@ -339,6 +339,31 @@ function renderProjectPage(view) {
   `).join('');
 }
 
+function renderReminderList(reminders = []) {
+  if (reminders.length === 0) return '<div class="muted">暂无提醒。</div>';
+  const statusMap = { scheduled: '待提醒', snoozed: '已推迟', started: '进行中' };
+  return reminders.map(reminder => `
+    <div>
+      <div class="item">
+        <div>
+          <strong>${esc(reminder.title)}</strong>
+          <small>${esc(reminder.dueAt?.slice(0, 10) ?? '')} ${esc(reminder.dueAt?.slice(11, 16) ?? '')} / ${esc(statusMap[reminder.status] ?? reminder.status)}</small>
+        </div>
+        <div style="display:flex;gap:4px">
+          <button onclick="toggleReminderEdit('${esc(reminder.id)}')">编辑</button>
+          <button onclick="send('reminder:delete', { id: '${esc(reminder.id)}' })">归档</button>
+        </div>
+      </div>
+      <div id="edit-${esc(reminder.id)}" style="display:none;margin:4px 0 8px" class="fields three">
+        <input id="edit-title-${esc(reminder.id)}" value="${esc(reminder.title)}" placeholder="标题">
+        <input id="edit-date-${esc(reminder.id)}" type="date" value="${esc(reminder.dueAt?.slice(0, 10) ?? '')}">
+        <input id="edit-time-${esc(reminder.id)}" type="time" value="${esc(reminder.dueAt?.slice(11, 16) ?? '')}">
+        <button onclick="saveReminderEdit('${esc(reminder.id)}')">保存</button>
+      </div>
+    </div>
+  `).join('');
+}
+
 function renderTransitionOptions(selectedId) {
   return transitionEffectsByGroup().map(group => `
               <optgroup label="${esc(group.label)}">
@@ -372,6 +397,24 @@ export function renderMainHtml(view, options = {}) {
           <button onclick="send('add-personal-project', { label: byId('projectLabel').value, defaultDurationMinutes: Number(byId('projectDuration').value) })">添加项目</button>
         </div>
         <div class="list section">${renderProjectPage(view)}</div>
+      </section>
+    </div>
+  ` : page === 'reminders' ? `
+    <div class="grid" style="grid-template-columns:1fr">
+      <section class="panel">
+        <h2>添加提醒</h2>
+        <div class="fields three">
+          <label>标题<input id="reminderTitle" placeholder="提醒内容"></label>
+          <label>日期<input id="reminderDate" type="date" value="${esc(view.date)}"></label>
+          <label>时间<input id="reminderTime" type="time" value="${esc(time(view.now))}"></label>
+        </div>
+        <div class="row section">
+          <button onclick="addReminder()">添加提醒</button>
+        </div>
+      </section>
+      <section class="panel section">
+        <h2>提醒列表</h2>
+        <div class="list">${renderReminderList(options.reminders ?? [])}</div>
       </section>
     </div>
   ` : `
@@ -410,13 +453,13 @@ export function renderMainHtml(view, options = {}) {
           </div>
         </section>
         <section class="panel section">
-          <h2>Add Reminder</h2>
+          <h2>添加项目</h2>
           <div class="fields">
-            <label>Name<input id="reminderLabel" placeholder="Task name"></label>
-            <label>Minutes<input id="reminderDuration" type="number" value="${esc(view.settings.defaultReminderDurationMinutes ?? 30)}"></label>
+            <label>项目名称<input id="projectLabel2" placeholder="项目名称"></label>
+            <label>时长(分)<input id="projectDuration2" type="number" value="${esc(view.settings.defaultReminderDurationMinutes ?? 30)}"></label>
           </div>
           <div class="row section">
-            <button data-action="add-personal-project" onclick="send('add-personal-project', { label: byId('reminderLabel').value, defaultDurationMinutes: Number(byId('reminderDuration').value) })">Add</button>
+            <button data-action="add-personal-project" onclick="send('add-personal-project', { label: byId('projectLabel2').value, defaultDurationMinutes: Number(byId('projectDuration2').value) })">添加项目</button>
           </div>
           <div class="list section">${renderPersonalProjects(view.personalProjects)}</div>
         </section>
@@ -465,6 +508,7 @@ export function renderMainHtml(view, options = {}) {
       <button class="tab${page === 'day-plan' ? ' active' : ''}" onclick="send('switch-page', { page: 'day-plan' })">Day Plan</button>
       <button class="tab${page === 'courses' ? ' active' : ''}" onclick="send('switch-page', { page: 'courses' })">课程表</button>
       <button class="tab${page === 'projects' ? ' active' : ''}" onclick="send('switch-page', { page: 'projects' })">个人项目</button>
+      <button class="tab${page === 'reminders' ? ' active' : ''}" onclick="send('switch-page', { page: 'reminders' })">提醒</button>
     </nav>
     <div class="message">${esc(options.message ?? '')}</div>
     ${pageContent}
@@ -575,6 +619,24 @@ function closeProjectPicker() {
   _pickerEnd = null;
   _pickerLabel = null;
   _pickerItemId = null;
+}
+function toggleReminderEdit(id) {
+  var el = document.getElementById('edit-' + id);
+  if (el) el.style.display = el.style.display === 'none' ? 'grid' : 'none';
+}
+function saveReminderEdit(id) {
+  var title = byId('edit-title-' + id).value.trim();
+  var date = byId('edit-date-' + id).value;
+  var time = byId('edit-time-' + id).value;
+  if (!title || !date || !time) return;
+  send('reminder:edit', { id: id, title: title, dueAt: date + 'T' + time });
+}
+function addReminder() {
+  var title = byId('reminderTitle').value.trim();
+  var date = byId('reminderDate').value;
+  var time = byId('reminderTime').value;
+  if (!title || !date || !time) return;
+  send('reminder:create', { title: title, dueAt: date + 'T' + time });
 }
 `,
   });

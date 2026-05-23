@@ -103,7 +103,11 @@ function safeSendReload() {
 function renderMain(message = lastMessage) {
   lastMessage = message ?? '';
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  mainWindow.loadURL(htmlUrl(renderMainHtml(currentView(), { message: lastMessage, storePath, page: currentPage })));
+  const options = { message: lastMessage, storePath, page: currentPage };
+  if (currentPage === 'reminders') {
+    options.reminders = listReminders(store, { includeArchived: false });
+  }
+  mainWindow.loadURL(htmlUrl(renderMainHtml(currentView(), options)));
 }
 
 function renderTrayWidget(message = lastMessage) {
@@ -637,6 +641,26 @@ function registerIpc() {
     await persist(withClose);
     currentReminder = null;
     resolveCurrentPopup();
+  });
+
+  ipcMain.on('reminder:create', async (_event, input) => {
+    const title = String(input.title ?? '').trim();
+    const dueAt = String(input.dueAt ?? '').trim();
+    if (!title || !dueAt) return;
+    const nextStore = createReminder(store, { title, dueAt: `${dueAt}:00+08:00` });
+    await persist(nextStore);
+    safeSendReload();
+  });
+
+  ipcMain.on('reminder:edit', async (_event, input) => {
+    const id = String(input.id ?? '').trim();
+    if (!id) return;
+    const changes = {};
+    if (input.title !== undefined) changes.title = String(input.title).trim();
+    if (input.dueAt !== undefined) changes.dueAt = `${String(input.dueAt).trim()}:00+08:00`;
+    const nextStore = editReminder(store, { id, ...changes });
+    await persist(nextStore);
+    safeSendReload();
   });
 }
 
