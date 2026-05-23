@@ -2,6 +2,7 @@ import {
   addBreakAndReschedule,
   extendBlockAndReschedule,
   moveBlockEndAndReschedule,
+  nextNonRuntimeHardStartAfter,
 } from '../prototypes/free-time-engine/engine.mjs';
 import {
   buildDayPlan,
@@ -12,6 +13,7 @@ import {
 import { getDueAlarm, getNextAlarm } from './alarm-presenter.js';
 import { choosePreferencePair } from './preference-sampler.js';
 import { getCourseEventsForDate } from './course-table-import.js';
+import { startReminder } from './app-store.js';
 
 function clone(value) {
   return structuredClone(value);
@@ -447,6 +449,41 @@ export function addBreakToStore(store, input = {}) {
       [date]: result.subsequentBlocks,
     },
   };
+
+  return { store: nextStore, view: rebuildStoreView(nextStore, now, date), changed: true };
+}
+
+export function startReminderFlow(store, input = {}) {
+  const now = input.now ? new Date(input.now) : runtimeNow(store);
+  const date = input.date ?? localDateKey(now);
+  const reminderId = String(input.reminderId ?? '').trim();
+  if (!reminderId) throw new Error('reminderId is required');
+  const durationMinutes = Number(input.durationMinutes);
+  if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) throw new Error('durationMinutes must be positive');
+
+  const current = buildRuntimeView(store, { systemNow: now, date });
+  const capEnd = nextNonRuntimeHardStartAfter(current.fixedEvents, now);
+  const blockEnd = capEnd && new Date(now.getTime() + durationMinutes * 60000) > capEnd
+    ? new Date(capEnd)
+    : new Date(now.getTime() + durationMinutes * 60000);
+  if (blockEnd <= now) return { store, view: current, changed: false };
+
+  // Step 1: end current block early (no-op if no current block)
+  const ended = endCurrentBlockEarly(store, { now, date });
+  // Step 2: insert one-off reminder block
+  const locked = lockBlockInStore(ended.store, {
+    now,
+    date,
+    start: now.toISOString(),
+    end: blockEnd.toISOString(),
+    label: input.label ?? reminderId,
+    itemId: `reminder-start-${reminderId}`,
+    source: 'reminder-start',
+    oneOff: true,
+    lockedAt: now.toISOString(),
+  });
+  // Step 3: mark reminder as started
+  const nextStore = startReminder(locked.store, { id: reminderId });
 
   return { store: nextStore, view: rebuildStoreView(nextStore, now, date), changed: true };
 }

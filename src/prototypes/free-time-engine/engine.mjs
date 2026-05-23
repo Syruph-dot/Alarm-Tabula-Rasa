@@ -271,7 +271,7 @@ function nextHardStartAfter(fixedEvents, targetEnd) {
     .sort((a, b) => a - b)[0];
 }
 
-function nextNonRuntimeHardStartAfter(fixedEvents, targetEnd) {
+export function nextNonRuntimeHardStartAfter(fixedEvents, targetEnd) {
   return fixedEvents
     .filter(event => !event.runtimeBlock)
     .map(event => new Date(event.startTime))
