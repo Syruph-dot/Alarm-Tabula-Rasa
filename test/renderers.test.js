@@ -70,6 +70,13 @@ describe('electron renderers', () => {
     assert.match(html, /data-block-start/);
     assert.match(html, /data-block-end/);
     assert.match(html, /openProjectPicker/);
+    assert.match(html, /id="newBlockProjectLabel"/);
+    assert.match(html, /data-action="change-block-project"/);
+    assert.match(html, /data-action="lock-block"/);
+    assert.match(html, /data-action="unlock-block"/);
+    assert.match(html, /data-block-actions/);
+    assert.match(html, /toggleBlockActions/);
+    assert.match(html, /openBlockPicker/);
     assert.match(html, /class="tab"/);
     assert.match(html, /课程表/);
     assert.match(html, /个人项目/);
@@ -225,5 +232,49 @@ describe('electron renderers', () => {
     assert.doesNotMatch(html, /\.block\.hard/);
     assert.doesNotMatch(html, />class</);
     assert.doesNotMatch(html, />Scheduled</);
+  });
+
+  it('does not duplicate persisted runtime lock blocks in the day plan', () => {
+    const html = renderMainHtml({
+      ...view,
+      fixedEvents: [
+        {
+          id: 'runtime-lock-0800-0830-task-a',
+          label: 'Task A',
+          startTime: '2026-05-22T08:00:00+08:00',
+          endTime: '2026-05-22T08:30:00+08:00',
+          source: 'runtime-lock',
+          locked: true,
+          runtimeBlock: {
+            itemId: 'a',
+            label: 'Task A',
+            start: new Date('2026-05-22T08:00:00+08:00'),
+            end: new Date('2026-05-22T08:30:00+08:00'),
+            durationMinutes: 30,
+            runtimeLocked: true,
+            lockedEventId: 'runtime-lock-0800-0830-task-a',
+            lockedEventSource: 'runtime-lock',
+          },
+        },
+      ],
+      softFillBlocks: [
+        {
+          itemId: 'a',
+          label: 'Task A',
+          start: new Date('2026-05-22T08:00:00+08:00'),
+          end: new Date('2026-05-22T08:30:00+08:00'),
+          durationMinutes: 30,
+          runtimeLocked: true,
+          lockedEventId: 'runtime-lock-0800-0830-task-a',
+          lockedEventSource: 'runtime-lock',
+        },
+      ],
+    });
+
+    assert.equal((html.match(/data-block-label="Task A"/g) ?? []).length, 1);
+    assert.match(html, /data-block-event-id="runtime-lock-0800-0830-task-a"/);
+    assert.match(html, /data-action="unlock-block"/);
+    assert.match(html, /'unlock-block'/);
+    assert.match(html, />Locked<\/button>/);
   });
 });

@@ -21,8 +21,11 @@ import {
   completeAlarm,
   endCurrentBlockEarly,
   extendCurrentBlock,
+  lockBlockInStore,
+  replaceBlockProjectInStore,
   resolvePreferenceInStore,
   shouldTriggerAlarm,
+  unlockBlockInStore,
 } from '../lib/app-runtime.js';
 import {
   createAlarmState,
@@ -345,19 +348,30 @@ function registerIpc() {
 
   ipcMain.on('change-block-project', async (_event, input) => {
     try {
-      const { start, end, newLabel } = input;
-      const date = start.slice(0, 10);
-      await persist(addFixedEvent(store, {
-        label: newLabel,
-        date,
-        startTime: start,
-        endTime: end,
-        source: 'project-pick',
-      }));
-      safeSendReload();
-      renderMain(`块已切换至: ${newLabel}`);
+      const result = replaceBlockProjectInStore(store, { ...input, now: currentView().now });
+      await applyRuntimeResult(result, `Block changed to ${input.newLabel ?? input.label}.`);
     } catch (error) {
       renderMain(`切换失败: ${error.message}`);
+    }
+  });
+
+  ipcMain.on('lock-block', async (_event, input) => {
+    try {
+      const result = lockBlockInStore(store, { ...input, now: currentView().now });
+      await applyRuntimeResult(result, 'Block locked.');
+    } catch (error) {
+      renderMain(`Could not lock block: ${error.message}`);
+      renderTrayWidget(`Could not lock block: ${error.message}`);
+    }
+  });
+
+  ipcMain.on('unlock-block', async (_event, input) => {
+    try {
+      const result = unlockBlockInStore(store, { ...input, now: currentView().now });
+      await applyRuntimeResult(result, result.changed ? 'Block unlocked.' : 'Block was not locked.');
+    } catch (error) {
+      renderMain(`Could not unlock block: ${error.message}`);
+      renderTrayWidget(`Could not unlock block: ${error.message}`);
     }
   });
 
@@ -449,8 +463,6 @@ async function bootstrap() {
   const userDataPath = app.getPath('userData');
   storePath = getDefaultStorePath(userDataPath);
   store = await ensureAppStore({ userDataPath, samplePath });
-  // 清空所有导入的课程表和计划（用户要求先重置）
-  store = clearAllData(store);
   await saveAppStore(storePath, store);
   shellState = createTrayShellState({ paused: store.runtime.paused });
   createMainWindow();
@@ -458,7 +470,7 @@ async function bootstrap() {
   createTray();
   registerIpc();
   startScheduler();
-  showMainWindow('已清空所有数据，准备就绪。');
+  showMainWindow('Ready.');
 }
 
 app.whenReady().then(bootstrap);

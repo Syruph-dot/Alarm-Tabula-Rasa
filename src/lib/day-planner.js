@@ -34,6 +34,11 @@ function formatLocalDateTime(date) {
   return `${y}-${mo}-${d}T${h}:${m}:00${DEFAULT_TIMEZONE_SUFFIX}`;
 }
 
+function formatEventDateTime(date) {
+  const value = date instanceof Date ? date : new Date(date);
+  return formatLocalDateTime(value);
+}
+
 function slugifyLabel(label) {
   const compact = label.trim().toLowerCase();
   if (compact === '开会') return 'kai-hui';
@@ -68,6 +73,7 @@ export function addTemporaryEvent(events, input) {
     startTime: formatLocalDateTime(start),
     endTime: formatLocalDateTime(end),
     source: 'temporary',
+    locked: true,
     metadata: {
       addedAt: input.addedAt ?? null,
     },
@@ -92,6 +98,47 @@ export function buildDayPlan(fixedEvents, reminderItems, now, settings) {
     merged,
     freeIntervals,
     softFillBlocks,
+  };
+}
+
+export function createLockedBlockEvent(input) {
+  const label = String(input.label ?? '').trim();
+  assertNonBlank(label, 'label');
+  const start = input.start instanceof Date ? input.start : new Date(input.start);
+  const end = input.end instanceof Date ? input.end : new Date(input.end);
+  if (Number.isNaN(start.getTime())) throw new Error('start is invalid');
+  if (Number.isNaN(end.getTime())) throw new Error('end is invalid');
+  if (end <= start) throw new Error('locked block must end after it starts');
+  const itemId = input.itemId ? String(input.itemId) : null;
+  const source = input.source ?? 'runtime-lock';
+  const id = input.id ?? `${source}-${formatTimeForId(start)}-${formatTimeForId(end)}-${slugifyLabel(label)}`;
+  const runtimeBlock = {
+    itemId: itemId ?? `one-off-${start.getTime()}`,
+    label,
+    start,
+    end,
+    durationMinutes: (end - start) / 60000,
+    score: Number(input.score ?? 0),
+    runtimeLocked: true,
+    lockedEventId: id,
+    lockedEventSource: source,
+    ...(input.oneOff ? { oneOff: true } : {}),
+  };
+
+  return {
+    id,
+    label,
+    startTime: formatEventDateTime(start),
+    endTime: formatEventDateTime(end),
+    source,
+    locked: true,
+    runtimeBlock,
+    metadata: {
+      ...(input.metadata ?? {}),
+      lockedAt: input.lockedAt ?? null,
+      oneOff: input.oneOff === true,
+      originalItemId: itemId,
+    },
   };
 }
 

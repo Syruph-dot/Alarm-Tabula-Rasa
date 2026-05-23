@@ -58,30 +58,42 @@ function nextDayPlanBlock(blocks = [], now = null) {
 
 function planBlockFromSoft(block) {
   return {
+    itemId: block.itemId,
+    fixedEventId: block.lockedEventId ?? null,
+    lockedEventSource: block.lockedEventSource ?? null,
     start: block.start,
     end: block.end,
     label: block.label,
     durationMinutes: block.durationMinutes ?? durationMinutes(block.start, block.end),
     break: block.break,
     source: 'soft',
+    locked: block.runtimeLocked === true,
   };
 }
 
 function planBlockFromFixed(event) {
+  const source = event.source ?? 'fixed';
   return {
     fixedEventId: event.id,
-    source: event.source ?? 'fixed',
+    lockedEventSource: source,
+    itemId: event.runtimeBlock?.itemId ?? null,
+    source,
     start: event.startTime,
     end: event.endTime,
     label: event.label,
     durationMinutes: durationMinutes(event.startTime, event.endTime),
+    locked: event.locked === true || ['class', 'course-import', 'temporary', 'fixed', 'project-pick', 'runtime-lock', 'runtime'].includes(source),
   };
 }
 
 function combinedDayPlanBlocks(view) {
+  const softBlocks = (view.softFillBlocks ?? []).map(planBlockFromSoft);
+  const softLockIds = new Set(softBlocks.map(block => block.fixedEventId).filter(Boolean));
   return [
-    ...(view.softFillBlocks ?? []).map(planBlockFromSoft),
-    ...(view.fixedEvents ?? []).map(planBlockFromFixed),
+    ...softBlocks,
+    ...(view.fixedEvents ?? [])
+      .filter(event => !(event.runtimeBlock && softLockIds.has(event.id)))
+      .map(planBlockFromFixed),
   ].sort((a, b) => new Date(a.start) - new Date(b.start));
 }
 
@@ -120,11 +132,18 @@ function shell({ title, body, script = '', compact = false }) {
     .hero-status { display: grid; gap: 8px; padding: 12px; border-radius: 8px; background: #141a21; border: 1px solid #2c3744; margin-bottom: 10px; }
     .hero-status strong { font-size: 16px; }
     .timeline { display: grid; gap: 6px; }
-    .block { display: grid; grid-template-columns: 84px 1fr; gap: 8px; align-items: center; padding: 8px; border-radius: 6px; background: #18202a; border-left: 3px solid #657385; }
+    .block-wrap { position: relative; overflow: hidden; border-radius: 6px; background: #24303c; }
+    .block-actions { position: absolute; top: 0; right: 0; bottom: 0; display: flex; align-items: stretch; gap: 1px; opacity: 0; pointer-events: none; transition: opacity 160ms ease; }
+    .block-wrap.actions-visible .block-actions { opacity: 1; pointer-events: auto; }
+    .block-actions button { width: 54px; border-radius: 0; border: 0; background: #46586b; }
+    .block-actions button.locked { background: #2f3a46; color: #9ca8b5; }
+    .block { position: relative; z-index: 1; display: grid; grid-template-columns: 84px 1fr auto; gap: 8px; align-items: center; padding: 8px; border-radius: 6px; background: #18202a; border-left: 3px solid #657385; transition: transform 180ms ease; }
+    .block-wrap.actions-visible .block { transform: translateX(-56px); }
     .block.break { background: #272318; border-left-color: #d5ad4c; }
     .block.past { background: #23272d; border-left-color: #7a828c; color: #b8c1cb; }
     .block.current { background: #152019; border-left-color: #65c38f; color: #f0fff4; }
     .block.future { background: #282615; border-left-color: #e0c05a; color: #fff7d6; }
+    .lock-mark { font-size: 13px; color: #9eacbb; }
     .muted { color: #96a1ae; }
     .choice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .choice { min-height: 58px; text-align: left; }
@@ -141,6 +160,7 @@ function shell({ title, body, script = '', compact = false }) {
     .picker-popup > strong { display: block; margin-bottom: 10px; font-size: 14px; }
     .picker-item { display: block; width: 100%; text-align: left; padding: 8px 12px; border: 1px solid #29323e; border-radius: 6px; background: #13191f; margin-bottom: 6px; cursor: pointer; font-size: 13px; }
     .picker-item:hover { background: #202832; border-color: #65c38f; }
+    .picker-new { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-bottom: 12px; }
     .course-group { margin-bottom: 16px; }
     .course-group h3 { font-size: 14px; color: #b8c1ce; margin: 0 0 8px; padding-bottom: 4px; border-bottom: 1px solid #29323e; }
     .course-row { display: grid; grid-template-columns: 100px 1fr auto; gap: 8px; padding: 5px 0; border-bottom: 1px solid #1a2128; font-size: 13px; }
@@ -171,10 +191,18 @@ function renderDayPlanBlocks(blocks = [], now = null) {
     if (block.break) classes.push('break');
     const startStr = block.start instanceof Date ? block.start.toISOString() : block.start;
     const endStr = block.end instanceof Date ? block.end.toISOString() : block.end;
+    const locked = block.locked === true;
+    const action = locked ? 'unlock-block' : 'lock-block';
     return `
-    <div class="${classes.join(' ')}" data-block-start="${esc(startStr)}" data-block-end="${esc(endStr)}" onclick="openProjectPicker(this)">
-      <strong>${time(block.start)}-${time(block.end)}</strong>
-      <span>${esc(block.label)} <small class="muted">${block.durationMinutes ?? durationMinutes(block.start, block.end)}m</small></span>
+    <div class="block-wrap" data-block-actions>
+      <div class="block-actions">
+        <button class="${locked ? 'locked' : ''}" data-action="${action}" onclick="event.stopPropagation(); lockBlock(this.closest('[data-block-actions]').querySelector('.block'))">${locked ? 'Locked' : 'Lock'}</button>
+      </div>
+      <div class="${classes.join(' ')}" data-block-start="${esc(startStr)}" data-block-end="${esc(endStr)}" data-block-label="${esc(block.label)}" data-block-item-id="${esc(block.itemId ?? '')}" data-block-event-id="${esc(block.fixedEventId ?? '')}" data-block-source="${esc(block.source ?? '')}" data-block-locked="${locked ? 'true' : 'false'}" onclick="openBlockPicker(event, this)" ontouchstart="startBlockSwipe(event, this)" ontouchend="endBlockSwipe(event, this)" oncontextmenu="event.preventDefault(); toggleBlockActions(this)">
+        <strong>${time(block.start)}-${time(block.end)}</strong>
+        <span>${esc(block.label)} <small class="muted">${block.durationMinutes ?? durationMinutes(block.start, block.end)}m</small></span>
+        <span class="lock-mark">${locked ? 'Locked' : ''}</span>
+      </div>
     </div>
   `;
   }).join('');
@@ -370,6 +398,10 @@ export function renderMainHtml(view, options = {}) {
     <div id="projectPicker" class="picker-overlay" style="display:none" onclick="if(event.target===this)closeProjectPicker()">
       <div class="picker-popup">
         <strong>选择项目</strong>
+        <div class="picker-new">
+          <input id="newBlockProjectLabel" placeholder="新事项">
+          <button data-action="change-block-project" onclick="createOneOffProject()">新建</button>
+        </div>
         <div id="pickerList"></div>
         <button style="margin-top:8px;width:100%" onclick="closeProjectPicker()">取消</button>
       </div>
@@ -381,6 +413,10 @@ export function renderMainHtml(view, options = {}) {
     script: `
 var _pickerStart = null;
 var _pickerEnd = null;
+var _pickerLabel = null;
+var _pickerItemId = null;
+var _swipeStartX = null;
+var _suppressNextBlockClick = false;
 function localToIso(value) {
   if (!value) return null;
   return new Date(value).toISOString();
@@ -391,11 +427,23 @@ function copyText(id) {
   element.select();
   document.execCommand('copy');
 }
+function openBlockPicker(event, blockEl) {
+  if (_suppressNextBlockClick) {
+    _suppressNextBlockClick = false;
+    event.preventDefault();
+    return;
+  }
+  openProjectPicker(blockEl);
+}
 function openProjectPicker(blockEl) {
   _pickerStart = blockEl.getAttribute('data-block-start');
   _pickerEnd = blockEl.getAttribute('data-block-end');
+  _pickerLabel = blockEl.getAttribute('data-block-label');
+  _pickerItemId = blockEl.getAttribute('data-block-item-id');
   var list = document.getElementById('pickerList');
   var items = document.querySelectorAll('[data-project-label]');
+  var input = document.getElementById('newBlockProjectLabel');
+  if (input) input.value = '';
   list.innerHTML = '';
   items.forEach(function(el) {
     var label = el.getAttribute('data-project-label');
@@ -403,7 +451,7 @@ function openProjectPicker(blockEl) {
     btn.className = 'picker-item';
     btn.textContent = label;
     btn.onclick = function() {
-      if (_pickerStart && _pickerEnd) send('change-block-project', { start: _pickerStart, end: _pickerEnd, newLabel: label });
+      if (_pickerStart && _pickerEnd) send('change-block-project', { start: _pickerStart, end: _pickerEnd, newLabel: label, oneOff: false });
       closeProjectPicker();
     };
     list.appendChild(btn);
@@ -411,10 +459,49 @@ function openProjectPicker(blockEl) {
   if (list.children.length === 0) list.innerHTML = '<div class="muted">暂无可用项目</div>';
   document.getElementById('projectPicker').style.display = 'flex';
 }
+function createOneOffProject() {
+  var input = document.getElementById('newBlockProjectLabel');
+  var label = input ? input.value.trim() : '';
+  if (!label || !_pickerStart || !_pickerEnd) return;
+  send('change-block-project', { start: _pickerStart, end: _pickerEnd, newLabel: label, oneOff: true });
+  closeProjectPicker();
+}
+function toggleBlockActions(blockEl) {
+  var wrap = blockEl.closest('[data-block-actions]');
+  if (!wrap) return;
+  wrap.classList.toggle('actions-visible');
+}
+function startBlockSwipe(event, blockEl) {
+  _swipeStartX = event.changedTouches && event.changedTouches[0] ? event.changedTouches[0].clientX : null;
+}
+function endBlockSwipe(event, blockEl) {
+  if (_swipeStartX == null || !event.changedTouches || !event.changedTouches[0]) return;
+  var dx = event.changedTouches[0].clientX - _swipeStartX;
+  _swipeStartX = null;
+  if (dx > 35) {
+    _suppressNextBlockClick = true;
+    event.preventDefault();
+    toggleBlockActions(blockEl);
+  }
+}
+function lockBlock(blockEl) {
+  if (!blockEl) return;
+  var locked = blockEl.getAttribute('data-block-locked') === 'true';
+  var payload = {
+    start: blockEl.getAttribute('data-block-start'),
+    end: blockEl.getAttribute('data-block-end'),
+    label: blockEl.getAttribute('data-block-label'),
+    itemId: blockEl.getAttribute('data-block-item-id') || null,
+    eventId: blockEl.getAttribute('data-block-event-id') || null,
+  };
+  send(locked ? 'unlock-block' : 'lock-block', payload);
+}
 function closeProjectPicker() {
   document.getElementById('projectPicker').style.display = 'none';
   _pickerStart = null;
   _pickerEnd = null;
+  _pickerLabel = null;
+  _pickerItemId = null;
 }
 `,
   });

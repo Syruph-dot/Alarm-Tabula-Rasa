@@ -8,7 +8,12 @@ export function mergeHardEvents(events) {
     end: new Date(e.endTime),
     labels: [e.label],
     sources: [e.source],
-    runtimeBlocks: e.runtimeBlock ? [e.runtimeBlock] : [],
+    runtimeBlocks: e.runtimeBlock ? [{
+      ...e.runtimeBlock,
+      lockedEventId: e.runtimeBlock.lockedEventId ?? e.id,
+      lockedEventSource: e.runtimeBlock.lockedEventSource ?? e.source,
+      runtimeLocked: e.runtimeBlock.runtimeLocked ?? true,
+    }] : [],
   }));
   parsed.sort((a, b) => a.start - b.start);
   const merged = [];
@@ -46,7 +51,7 @@ function runtimeBlocksFromMerged(merged) {
   return merged.flatMap(event => event.runtimeBlocks ?? []);
 }
 
-export function selectItemForSlot(items, scheduledCounts, minFillMinutes) {
+export function selectItemForSlot(items, scheduledCounts, minFillMinutes, options = {}) {
   const active = items.filter(i => i.active);
   if (active.length === 0) return null;
 
@@ -57,8 +62,25 @@ export function selectItemForSlot(items, scheduledCounts, minFillMinutes) {
     return { item, score: item.importanceScore - cooldownPenalty };
   });
 
-  scored.sort((a, b) => b.score - a.score);
-  return scored[0].item;
+  const random = options.random ?? (() => 0);
+  const temperature = Math.max(1, Number(options.temperature ?? options.softmaxTemperature ?? 80));
+  const maxScore = Math.max(...scored.map(entry => entry.score));
+  const weighted = scored.map(entry => ({
+    ...entry,
+    weight: Math.exp((entry.score - maxScore) / temperature),
+  })).sort((a, b) => b.weight - a.weight);
+  const totalWeight = weighted.reduce((sum, entry) => sum + entry.weight, 0);
+  if (!Number.isFinite(totalWeight) || totalWeight <= 0) {
+    scored.sort((a, b) => b.score - a.score);
+    return scored[0].item;
+  }
+
+  let threshold = Math.min(0.999999999999, Math.max(0, random())) * totalWeight;
+  for (const entry of weighted) {
+    threshold -= entry.weight;
+    if (threshold <= 0) return entry.item;
+  }
+  return weighted.at(-1).item;
 }
 
 function isCooldownActive(cooldown, slotStart) {
@@ -113,7 +135,7 @@ export function fillFreeIntervals(freeIntervals, reminderItems, settings) {
         ? reminderItems.filter(item => !suppressFirstItemIds.has(item.id))
         : reminderItems;
       const filteredItems = availableItems.filter(item => !isItemCoolingDown(item.id, cursor, cooldowns));
-      const chosen = selectItemForSlot(filteredItems, scheduledCounts, minFill);
+      const chosen = selectItemForSlot(filteredItems, scheduledCounts, minFill, settings);
       if (!chosen) {
         const breakEnd = nextCooldownEndAfter(cursor, gap.end, cooldowns);
         if (breakEnd <= cursor) break;

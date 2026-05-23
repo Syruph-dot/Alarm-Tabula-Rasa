@@ -64,6 +64,7 @@ describe('temporary event insertion', () => {
     assert.equal(result[0].id, 'temp-2026-05-22-kai-hui-0800-0900');
     assert.equal(result[0].label, '开会');
     assert.equal(result[0].source, 'temporary');
+    assert.equal(result[0].locked, true);
     assert.equal(result[0].startTime, '2026-05-22T08:00:00+08:00');
     assert.equal(result[0].endTime, '2026-05-22T09:00:00+08:00');
   });

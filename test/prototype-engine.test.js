@@ -9,6 +9,7 @@ import {
   addBreakAndReschedule,
   applyRuntimeOverrides,
   chooseComparisonPair,
+  selectItemForSlot,
 } from '../src/prototypes/free-time-engine/engine.mjs';
 
 const settings = {
@@ -354,6 +355,21 @@ describe('prototype free-time engine', () => {
     assert.ok(pair);
     assert.notDeepEqual([pair.left.id, pair.right.id].sort(), ['a', 'b']);
     assert.ok([pair.left.id, pair.right.id].some(id => ['c', 'd', 'e'].includes(id)));
+  });
+
+  it('selects soft-fill items with seeded softmax sampling instead of always taking the max score', () => {
+    const items = [
+      { id: 'high', label: 'High', active: true, importanceScore: 1600 },
+      { id: 'mid', label: 'Mid', active: true, importanceScore: 1500 },
+      { id: 'low', label: 'Low', active: true, importanceScore: 1400 },
+    ];
+
+    const chosen = selectItemForSlot(items, new Map(), 15, {
+      random: () => 0.75,
+      temperature: 120,
+    });
+
+    assert.equal(chosen.id, 'mid');
   });
 
   it('avoids immediately repeating the most recently compared pair when alternatives exist', () => {

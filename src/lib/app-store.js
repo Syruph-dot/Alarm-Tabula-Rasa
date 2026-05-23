@@ -127,6 +127,8 @@ export function addReminderItem(store, input) {
     lastComparedAt: null,
     lastScheduledAt: null,
     lastTouchedAt: null,
+    ...(input.oneOff ? { oneOff: true } : {}),
+    ...(input.archivedAt ? { archivedAt: new Date(input.archivedAt).toISOString() } : {}),
   };
 
   return normalizeStore({

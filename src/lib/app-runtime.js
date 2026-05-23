@@ -5,6 +5,7 @@ import {
 } from '../prototypes/free-time-engine/engine.mjs';
 import {
   buildDayPlan,
+  createLockedBlockEvent,
   rebuildPlanAfterPreferenceChoice,
   rebuildPlanAfterTemporaryEvent,
 } from './day-planner.js';
@@ -55,6 +56,71 @@ function blockKey(alarm) {
 
 function activeItems(store) {
   return store.reminderItems.filter(item => item.active !== false);
+}
+
+function persistedEventsForDate(store, date) {
+  return store.fixedEvents?.[date] ?? [];
+}
+
+function replacePersistedDayEvents(store, date, events) {
+  const persistedIds = new Set(persistedEventsForDate(store, date).map(event => event.id));
+  return events.filter(event => persistedIds.has(event.id) || event.source !== 'course-import');
+}
+
+function normalizeInstant(value, field) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) throw new Error(`${field} is invalid`);
+  return date;
+}
+
+function eventDateKey(start, fallbackDate) {
+  return fallbackDate ?? localDateKey(start);
+}
+
+function findItemByLabel(store, label) {
+  return store.reminderItems.find(item => item.label === label && item.active !== false);
+}
+
+function slug(value, fallback = 'item') {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[^\w]+/g, '-')
+    .replace(/^-+|-+$/g, '') || fallback;
+}
+
+function archivedOneOffItem(label, durationMinutes, at) {
+  const now = new Date(at);
+  return {
+    id: `one-off-${now.getTime()}-${slug(label)}`,
+    label,
+    defaultDurationMinutes: durationMinutes,
+    active: false,
+    importanceScore: 1450,
+    confidence: 0,
+    lastComparedAt: null,
+    lastScheduledAt: null,
+    lastTouchedAt: now.toISOString(),
+    oneOff: true,
+    archivedAt: now.toISOString(),
+  };
+}
+
+function isUserLockEvent(event) {
+  return ['runtime-lock', 'project-pick', 'runtime'].includes(event?.source);
+}
+
+function matchesBlockWindow(event, input) {
+  const start = input.start ? normalizeInstant(input.start, 'start') : null;
+  const end = input.end ? normalizeInstant(input.end, 'end') : null;
+  const label = String(input.label ?? '').trim();
+  const eventStart = new Date(event.startTime);
+  const eventEnd = new Date(event.endTime);
+  if (start && eventStart.getTime() !== start.getTime()) return false;
+  if (end && eventEnd.getTime() !== end.getTime()) return false;
+  if (label && event.label !== label) return false;
+  return true;
 }
 
 export function buildRuntimeView(store, options = {}) {
@@ -135,7 +201,7 @@ export function addTemporaryEventToStore(store, input) {
     ...clone(store),
     fixedEvents: {
       ...store.fixedEvents,
-      [date]: nextPlan.fixedEvents,
+      [date]: replacePersistedDayEvents(store, date, nextPlan.fixedEvents),
     },
     generatedTables: {
       ...store.generatedTables,
@@ -144,6 +210,109 @@ export function addTemporaryEventToStore(store, input) {
   };
 
   return { store: nextStore, view: rebuildStoreView(nextStore, now, date) };
+}
+
+export function lockBlockInStore(store, input = {}) {
+  const now = input.now ? new Date(input.now) : runtimeNow(store);
+  const start = normalizeInstant(input.start, 'start');
+  const end = normalizeInstant(input.end, 'end');
+  const date = eventDateKey(start, input.date);
+  const current = buildRuntimeView(store, { systemNow: now, date });
+  const event = createLockedBlockEvent({
+    ...input,
+    start,
+    end,
+    source: input.source ?? 'runtime-lock',
+    lockedAt: input.lockedAt ?? now.toISOString(),
+  });
+  const nextStore = {
+    ...clone(store),
+    fixedEvents: {
+      ...store.fixedEvents,
+      [date]: [
+        ...replacePersistedDayEvents(store, date, current.fixedEvents).filter(existing => existing.id !== event.id),
+        event,
+      ].sort((a, b) => new Date(a.startTime) - new Date(b.startTime)),
+    },
+  };
+
+  return { store: nextStore, view: rebuildStoreView(nextStore, now, date), changed: true };
+}
+
+export function unlockBlockInStore(store, input = {}) {
+  const now = input.now ? new Date(input.now) : runtimeNow(store);
+  const date = input.date
+    ?? (input.start ? eventDateKey(normalizeInstant(input.start, 'start')) : localDateKey(now));
+  const persistedEvents = persistedEventsForDate(store, date);
+  const nextEvents = persistedEvents.filter(event => {
+    if (!isUserLockEvent(event)) return true;
+    if (input.eventId) return event.id !== input.eventId;
+    return !matchesBlockWindow(event, input);
+  });
+  const changed = nextEvents.length !== persistedEvents.length;
+  if (!changed) return { store, view: rebuildStoreView(store, now, date), changed: false };
+
+  const nextStore = {
+    ...clone(store),
+    fixedEvents: {
+      ...store.fixedEvents,
+      [date]: nextEvents,
+    },
+  };
+
+  return { store: nextStore, view: rebuildStoreView(nextStore, now, date), changed: true };
+}
+
+export function replaceBlockProjectInStore(store, input = {}) {
+  const now = input.now ? new Date(input.now) : runtimeNow(store);
+  const start = normalizeInstant(input.start, 'start');
+  const end = normalizeInstant(input.end, 'end');
+  const date = eventDateKey(start, input.date);
+  const label = String(input.newLabel ?? input.label ?? '').trim();
+  if (!label) throw new Error('newLabel is required');
+
+  const durationMinutes = Math.max(1, Math.round((end - start) / 60000));
+  const existingItem = input.itemId
+    ? store.reminderItems.find(item => item.id === input.itemId)
+    : findItemByLabel(store, label);
+  const oneOffItem = input.oneOff
+    ? archivedOneOffItem(label, durationMinutes, input.at ?? now)
+    : null;
+  const itemId = input.itemId ?? existingItem?.id ?? oneOffItem?.id ?? null;
+  const event = createLockedBlockEvent({
+    label,
+    itemId,
+    start,
+    end,
+    source: 'project-pick',
+    oneOff: input.oneOff === true,
+    lockedAt: now.toISOString(),
+    metadata: {
+      ...(input.metadata ?? {}),
+      archivedReminderItemId: oneOffItem?.id ?? null,
+      pickedFromItemId: existingItem?.id ?? null,
+    },
+  });
+  const current = buildRuntimeView(store, { systemNow: now, date });
+  const nextStore = {
+    ...clone(store),
+    reminderItems: oneOffItem
+      ? [...store.reminderItems.filter(item => item.id !== oneOffItem.id), oneOffItem]
+      : store.reminderItems,
+    fixedEvents: {
+      ...store.fixedEvents,
+      [date]: [
+        ...replacePersistedDayEvents(store, date, current.fixedEvents).filter(existing => {
+          const eventStart = new Date(existing.startTime);
+          const eventEnd = new Date(existing.endTime);
+          return !(existing.source === 'project-pick' && eventStart < end && eventEnd > start);
+        }),
+        event,
+      ].sort((a, b) => new Date(a.startTime) - new Date(b.startTime)),
+    },
+  };
+
+  return { store: nextStore, view: rebuildStoreView(nextStore, now, date), changed: true };
 }
 
 export function endCurrentBlockEarly(store, input = {}) {

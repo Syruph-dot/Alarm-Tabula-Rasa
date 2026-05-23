@@ -78,6 +78,7 @@ describe('course table import', () => {
     assert.equal(mondayEvents[0].label, '高等数学 @ 宝山213');
     assert.ok(mondayEvents[0].startTime.startsWith('2026-05-25T09:55'));
     assert.ok(mondayEvents[0].endTime.startsWith('2026-05-25T11:30'));
+    assert.equal(mondayEvents[0].locked, true);
 
     // 2026-05-27 is a Wednesday (dayOfWeek=3) → 电路分析
     const wedEvents = getCourseEventsForDate(storeWithCourses, '2026-05-27');

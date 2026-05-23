@@ -106,6 +106,7 @@ export function parseCourseTableJson(jsonText) {
       label: labelFor({ title, location: rawEvent.location }),
       startTime,
       endTime,
+      locked: true,
       metadata: {
         title,
         location: String(rawEvent.location ?? '').trim(),
@@ -150,6 +151,7 @@ export function getCourseEventsForDate(store, date) {
       startTime: `${date}T${entry.startTime}:00${DEFAULT_TZ}`,
       endTime: `${date}T${entry.endTime}:00${DEFAULT_TZ}`,
       source: 'course-import',
+      locked: true,
       metadata: { ...entry.metadata },
     }));
 }

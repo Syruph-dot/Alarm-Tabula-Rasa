@@ -7,8 +7,11 @@ import {
   completeAlarm,
   endCurrentBlockEarly,
   extendCurrentBlock,
+  lockBlockInStore,
+  replaceBlockProjectInStore,
   resolvePreferenceInStore,
   shouldTriggerAlarm,
+  unlockBlockInStore,
 } from '../src/lib/app-runtime.js';
 
 function baseStore() {
@@ -118,6 +121,91 @@ describe('app runtime', () => {
 
     assert.ok(extended.view.softFillBlocks.some(block => block.extended));
     assert.ok(rested.view.softFillBlocks.some(block => block.break && block.breakReason === 'requested-break'));
+  });
+
+  it('replaces a clicked block with an archived one-off reminder instead of a permanent project', () => {
+    const result = replaceBlockProjectInStore(baseStore(), {
+      now: new Date('2026-05-22T08:00:00+08:00'),
+      start: '2026-05-22T08:00:00+08:00',
+      end: '2026-05-22T08:30:00+08:00',
+      newLabel: 'One-off errand',
+      oneOff: true,
+    });
+
+    const event = result.store.fixedEvents['2026-05-22'].find(candidate => candidate.label === 'One-off errand');
+    const oneOffItem = result.store.reminderItems.find(item => item.label === 'One-off errand');
+
+    assert.ok(event);
+    assert.equal(event.source, 'project-pick');
+    assert.equal(event.locked, true);
+    assert.equal(event.metadata.oneOff, true);
+    assert.ok(event.metadata.archivedReminderItemId);
+    assert.ok(oneOffItem);
+    assert.equal(oneOffItem.active, false);
+    assert.equal(oneOffItem.oneOff, true);
+    assert.ok(oneOffItem.archivedAt);
+    const replacedBlock = result.view.softFillBlocks.find(block => block.label === 'One-off errand');
+    assert.ok(replacedBlock);
+    assert.equal(replacedBlock.runtimeLocked, true);
+    assert.ok(result.view.softFillBlocks.filter(block => block.label !== 'One-off errand').every(block => (
+      block.end <= new Date('2026-05-22T08:00:00+08:00')
+      || block.start >= new Date('2026-05-22T08:30:00+08:00')
+    )));
+  });
+
+  it('locks a soft block so later dynamic rebuilds cannot replace it', () => {
+    const locked = lockBlockInStore(baseStore(), {
+      now: new Date('2026-05-22T08:00:00+08:00'),
+      start: '2026-05-22T08:00:00+08:00',
+      end: '2026-05-22T08:30:00+08:00',
+      label: 'Task A',
+      itemId: 'a',
+    });
+    const rebuilt = resolvePreferenceInStore(locked.store, {
+      now: new Date('2026-05-22T08:00:00+08:00'),
+      leftItemId: 'a',
+      rightItemId: 'b',
+      choice: 'right',
+    });
+
+    const event = rebuilt.store.fixedEvents['2026-05-22'].find(candidate => candidate.source === 'runtime-lock');
+    assert.ok(event);
+    assert.equal(event.locked, true);
+    assert.equal(event.label, 'Task A');
+    const lockedBlock = rebuilt.view.softFillBlocks.find(block => block.label === 'Task A');
+    assert.ok(lockedBlock);
+    assert.equal(lockedBlock.runtimeLocked, true);
+    assert.equal(lockedBlock.itemId, 'a');
+    assert.ok(rebuilt.view.softFillBlocks.filter(block => block !== lockedBlock).every(block => (
+      block.end <= new Date('2026-05-22T08:00:00+08:00')
+      || block.start >= new Date('2026-05-22T08:30:00+08:00')
+    )));
+  });
+
+  it('unlocks a user-locked block so dynamic rebuilds can replace it again', () => {
+    const locked = lockBlockInStore(baseStore(), {
+      now: new Date('2026-05-22T08:00:00+08:00'),
+      start: '2026-05-22T08:00:00+08:00',
+      end: '2026-05-22T08:30:00+08:00',
+      label: 'Task A',
+      itemId: 'a',
+    });
+    const event = locked.store.fixedEvents['2026-05-22'].find(candidate => candidate.source === 'runtime-lock');
+    const unlocked = unlockBlockInStore(locked.store, {
+      now: new Date('2026-05-22T08:00:00+08:00'),
+      eventId: event.id,
+    });
+    const rebuilt = resolvePreferenceInStore(unlocked.store, {
+      now: new Date('2026-05-22T08:00:00+08:00'),
+      leftItemId: 'a',
+      rightItemId: 'b',
+      choice: 'right',
+    });
+
+    assert.equal(unlocked.changed, true);
+    assert.equal(unlocked.store.fixedEvents['2026-05-22'].some(candidate => candidate.id === event.id), false);
+    assert.equal(rebuilt.view.softFillBlocks[0].itemId, 'b');
+    assert.equal(rebuilt.view.softFillBlocks.some(block => block.runtimeLocked === true && block.label === 'Task A'), false);
   });
 
   it('triggers each alarm once unless the user completes it', () => {
