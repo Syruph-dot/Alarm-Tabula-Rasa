@@ -58,6 +58,28 @@ function runtimeBlocksFromMerged(merged) {
   return merged.flatMap(event => event.runtimeBlocks ?? []);
 }
 
+function courseBlocksFromEvents(events, effectiveStart, existingRuntimeBlocks) {
+  return events
+    .filter(event => event.source === 'course-import' && new Date(event.endTime) > effectiveStart)
+    .filter(event => !existingRuntimeBlocks.some(rb => {
+      const eventStart = new Date(event.startTime);
+      const eventEnd = new Date(event.endTime);
+      return rb.start < eventEnd && rb.end > eventStart;
+    }))
+    .map(event => ({
+      itemId: `course-${event.id}`,
+      label: event.label,
+      start: new Date(event.startTime),
+      end: new Date(event.endTime),
+      durationMinutes: (new Date(event.endTime) - new Date(event.startTime)) / 60000,
+      score: 0,
+      courseBlock: true,
+      runtimeLocked: true,
+      lockedEventId: event.id,
+      lockedEventSource: 'course-import',
+    }));
+}
+
 function namePinsAfter(events, effectiveStart) {
   return events
     .filter(event => isNamePinEvent(event) && event.runtimeBlock && new Date(event.endTime) > effectiveStart)
@@ -226,9 +248,10 @@ export function rebuildFromNow(fixedEvents, personalProjects, now, settings) {
   const effectiveStart = now > dayStart ? now : dayStart;
   const free = calculateFreeIntervals(merged, effectiveStart, dayEnd);
   const runtimeBlocks = runtimeBlocksFromMerged(merged).filter(block => block.end > effectiveStart);
+  const courseBlocks = courseBlocksFromEvents(futureEvents, effectiveStart, runtimeBlocks);
   const generated = fillFreeIntervals(free, personalProjects, settings);
   return applyNamePins(
-    [...runtimeBlocks, ...generated].sort((a, b) => a.start - b.start),
+    [...runtimeBlocks, ...courseBlocks, ...generated].sort((a, b) => a.start - b.start),
     namePinsAfter(futureEvents, effectiveStart),
   );
 }

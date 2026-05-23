@@ -62,15 +62,17 @@ function nextDayPlanBlock(blocks = [], now = null) {
 
 function planBlockFromSoft(block) {
   const source = block.lockedEventSource ?? null;
+  const isCourse = block.courseBlock === true;
   return {
     itemId: block.itemId,
-    fixedEventId: block.lockedEventId ?? null,
+    fixedEventId: isCourse ? null : (block.lockedEventId ?? null),
     lockedEventSource: source,
     start: block.start,
     end: block.end,
     label: block.label,
     durationMinutes: block.durationMinutes ?? durationMinutes(block.start, block.end),
     break: block.break,
+    courseBlock: isCourse || undefined,
     source: 'soft',
     locked: block.runtimeLocked === true && ['runtime-lock', 'project-pick'].includes(source),
   };
@@ -94,10 +96,19 @@ function planBlockFromFixed(event) {
 function combinedDayPlanBlocks(view) {
   const softBlocks = (view.softFillBlocks ?? []).map(planBlockFromSoft);
   const softLockIds = new Set(softBlocks.map(block => block.fixedEventId).filter(Boolean));
+  const courseBlockEventIds = new Set(
+    (view.softFillBlocks ?? [])
+      .filter(b => b.courseBlock && b.lockedEventId)
+      .map(b => b.lockedEventId),
+  );
   return [
     ...softBlocks,
     ...(view.fixedEvents ?? [])
-      .filter(event => !(event.runtimeBlock && softLockIds.has(event.id)))
+      .filter(event => {
+        if (event.runtimeBlock && softLockIds.has(event.id)) return false;
+        if (courseBlockEventIds.has(event.id)) return false;
+        return true;
+      })
       .map(planBlockFromFixed),
   ].sort((a, b) => new Date(a.start) - new Date(b.start));
 }
