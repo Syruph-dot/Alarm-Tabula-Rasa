@@ -38,6 +38,7 @@ function slug(value, fallback = 'item') {
 }
 
 function normalizeStore(raw) {
+  const rawSettings = raw.settings ?? {};
   const settings = {
     dayStart: '08:00',
     dayEnd: '23:00',
@@ -48,8 +49,11 @@ function normalizeStore(raw) {
     defaultEarlyEndCooldownMinutes: 180,
     reminderLeadMinutes: 0,
     ...DEFAULT_TRANSITION_SETTINGS,
-    ...raw.settings,
+    ...rawSettings,
   };
+  if (rawSettings.transitionTriangleSizePx === 112) {
+    settings.transitionTriangleSizePx = DEFAULT_TRANSITION_SETTINGS.transitionTriangleSizePx;
+  }
   return {
     version: raw.version ?? DEFAULT_VERSION,
     metadata: raw.metadata ?? {},

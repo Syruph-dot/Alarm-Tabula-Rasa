@@ -195,6 +195,7 @@ export function fillFreeIntervals(freeIntervals, personalProjects, settings) {
   const suppressFirstItemIds = new Set(settings.suppressFirstItemIds ?? []);
   const cooldowns = settings.itemCooldowns ?? [];
   let firstSlot = true;
+  let previousGeneratedItemId = null;
 
   for (const gap of freeIntervals) {
     let cursor = gap.start;
@@ -205,13 +206,17 @@ export function fillFreeIntervals(freeIntervals, personalProjects, settings) {
       const availableItems = firstSlot && suppressFirstItemIds.size > 0
         ? personalProjects.filter(item => !suppressFirstItemIds.has(item.id))
         : personalProjects;
-      const filteredItems = availableItems.filter(item => !isItemCoolingDown(item.id, cursor, cooldowns));
+      const cooledItems = availableItems.filter(item => !isItemCoolingDown(item.id, cursor, cooldowns));
+      const filteredItems = cooledItems.length > 1 && previousGeneratedItemId
+        ? cooledItems.filter(item => item.id !== previousGeneratedItemId)
+        : cooledItems;
       const chosen = selectItemForSlot(filteredItems, scheduledCounts, minFill, settings);
       if (!chosen) {
         const breakEnd = nextCooldownEndAfter(cursor, gap.end, cooldowns);
         if (breakEnd <= cursor) break;
         blocks.push(makeBreakBlock(cursor, breakEnd));
         firstSlot = false;
+        previousGeneratedItemId = null;
         cursor = breakEnd;
         continue;
       }
@@ -231,6 +236,7 @@ export function fillFreeIntervals(freeIntervals, personalProjects, settings) {
         score: chosen.importanceScore,
       });
       firstSlot = false;
+      previousGeneratedItemId = chosen.id;
       cursor = blockEnd;
     }
   }

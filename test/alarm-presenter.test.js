@@ -83,6 +83,26 @@ describe('alarm presenter', () => {
     assert.equal(showing.remainingSeconds, 30);
   });
 
+  it('keeps the Blue Archive sweep-in active for the triangle and linear-domain phases', () => {
+    const state = createAlarmState({
+      alarm: getNextAlarm(blocks, new Date('2026-05-22T12:30:00+08:00')),
+      seconds: 30,
+      now: new Date('2026-05-22T12:30:00+08:00'),
+      transitionEffectId: 'blue-archive.sweep-1',
+    });
+    const afterTrianglePhase = tickAlarm(state, {
+      now: new Date('2026-05-22T12:30:01.300+08:00'),
+    });
+    const showing = tickAlarm(state, {
+      now: new Date('2026-05-22T12:30:02.500+08:00'),
+    });
+
+    assert.equal(state.sweepInMs, 2400);
+    assert.equal(state.countdownStartedAt.toISOString(), new Date('2026-05-22T12:30:02.400+08:00').toISOString());
+    assert.equal(afterTrianglePhase.status, 'sweeping-in');
+    assert.equal(showing.status, 'showing');
+  });
+
   it('click dismisses only when enabled', () => {
     const alarm = getNextAlarm(blocks, new Date('2026-05-22T12:30:00+08:00'));
     const clickable = createAlarmState({
@@ -194,7 +214,7 @@ describe('alarm presenter', () => {
       seconds: 30,
       now: new Date('2026-05-22T12:30:00+08:00'),
       transitionEffectId: 'blue-archive.sweep-1',
-      transitionTriangleSizePx: 112,
+      transitionTriangleSizePx: 600,
       transitionTiltDeg: -16,
       transitionViewportWidth: 1280,
       transitionViewportHeight: 720,
@@ -202,20 +222,46 @@ describe('alarm presenter', () => {
     const html = renderAlarmHtml(state);
 
     assert.match(html, /ba-triangle-sweep/);
-    assert.match(html, /--triangle-size:\s*112px/);
-    assert.match(html, /--triangle-height:\s*96\.995/);
+    assert.match(html, /--triangle-size:\s*600px/);
+    assert.match(html, /--triangle-height:\s*519\.615/);
     assert.match(html, /--grid-tilt:\s*-16deg/);
+    assert.match(html, /--triangle-phase-ms:\s*1200ms/);
+    assert.match(html, /--linear-phase-ms:\s*1200ms/);
+    assert.match(html, /--linear-phase-delay:\s*1200ms/);
+    assert.match(html, /--triangle-soft-ms:\s*\d+ms/);
     assert.match(html, /--tri-points:50% 0,\s*100% 100%,\s*0 100%/);
     assert.match(html, /--tri-points:0 0,\s*100% 0,\s*50% 100%/);
-    assert.match(html, /--cx:/);
-    assert.match(html, /--cy:/);
-    assert.match(html, /--scale:/);
-    assert.match(html, /--sweep-softness:/);
+    assert.match(html, /--tri-delay:\s*\d+ms/);
     assert.match(html, /clip-path:\s*polygon\(var\(--tri-points\)\)/);
-    assert.match(html, /animation:\s*baDomainIn .* var\(--syr-push-strong\) both/);
-    assert.match(html, /transform:\s*translate\(var\(--x\), var\(--y\)\) scale\(var\(--scale\)\)/);
+    assert.match(html, /ba-sky-domain top/);
+    assert.match(html, /ba-sky-domain bottom/);
+    assert.match(html, /background:\s*#65d9ff/);
+    assert.match(html, /\.ba-grid\s*\{[^}]*z-index:\s*1/s);
+    assert.match(html, /\.ba-sky-domain\s*\{[^}]*z-index:\s*0/s);
+    assert.match(html, /\.ba-sky-domain\.top\s*\{[^}]*transform:\s*scaleY\(1\)/s);
+    assert.match(html, /\.ba-triangle-sweep \.alarm-content\s*\{[^}]*z-index:\s*2/s);
+    assert.match(html, /\.alarm-screen\.sweeping-in \.ba-grid i\s*\{\s*animation:\s*baTriangleIn var\(--triangle-soft-ms\) var\(--syr-push-strong\) var\(--tri-delay\) both/s);
+    assert.match(html, /@keyframes baTriangleIn\s*\{[\s\S]*0%\s*\{[^}]*scale\(0\)[^}]*\}[\s\S]*100%\s*\{[^}]*scale\(1\)[^}]*\}/);
+    assert.match(html, /\.alarm-screen\.sweeping-in \.ba-sky-domain\.top\s*\{\s*animation:\s*baSkyTopIn var\(--linear-phase-ms\) var\(--syr-push-strong\) var\(--linear-phase-delay\) both/s);
+    assert.match(html, /\.alarm-screen\.sweeping-in \.ba-sky-domain\.bottom\s*\{\s*animation:\s*baSkyBottomIn var\(--linear-phase-ms\) var\(--syr-push-strong\) var\(--linear-phase-delay\) both/s);
+    assert.match(html, /mask-image:\s*linear-gradient\(#000,\s*#000\),\s*linear-gradient\(#000,\s*#000\)/);
+    assert.match(html, /mask-position:\s*top,\s*bottom/);
+    assert.match(html, /mask-size:\s*100% 50%,\s*100% 50%/);
+    assert.match(html, /\.alarm-screen\.sweeping-in \.ba-triangle-sweep \.alarm-content\s*\{\s*animation:\s*baContentClipIn var\(--linear-phase-ms\) var\(--syr-push-strong\) var\(--linear-phase-delay\) both/s);
+    assert.match(html, /@keyframes baContentClipIn\s*\{[\s\S]*0%\s*\{\s*mask-size:\s*100% 0%,\s*100% 0%;\s*-webkit-mask-size:\s*100% 0%,\s*100% 0%;\s*\}[\s\S]*100%\s*\{\s*mask-size:\s*100% 50%,\s*100% 50%;\s*-webkit-mask-size:\s*100% 50%,\s*100% 50%;\s*\}/);
+    assert.match(html, /transform:\s*translate\(var\(--x\), var\(--y\)\) scale\(1\)/);
+    assert.match(html, /opacity:\s*0\.98/);
     assert.doesNotMatch(html, /\.alarm-screen\.sweeping-in \.ba-triangle-sweep \{\s*animation:/);
+    assert.doesNotMatch(html, /requestAnimationFrame|style\.setProperty|data-cx|filter:|drop-shadow|text-shadow|baTriangleOut|baContentIn|baContentOut|translateY|--delay:|--out-delay:|--content-delay|--content-reveal-ms/);
     assert.doesNotMatch(html, /35\.5%|66\.7%|phaseProgress|black phase/i);
+
+    const blueArchiveCss = html.match(/\.ba-triangle-sweep[\s\S]*?<\/style>/)?.[0] ?? '';
+    const animationDeclarations = blueArchiveCss.match(/animation:\s*[^;]+;/g) ?? [];
+    assert.ok(animationDeclarations.length > 0);
+    assert.equal(
+      animationDeclarations.every(declaration => declaration.includes('var(--syr-push-strong)')),
+      true,
+    );
   });
 
   it('does not refresh the full alarm page while the sweep-in animation is still running', () => {

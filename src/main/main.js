@@ -100,12 +100,19 @@ function safeSendReload() {
   refreshTrayMenu();
 }
 
-function renderMain(message = lastMessage) {
+async function renderMain(message = lastMessage) {
   lastMessage = message ?? '';
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const options = { message: lastMessage, storePath, page: currentPage };
+  try {
+    options.scrollY = await mainWindow.webContents.executeJavaScript(
+      'window.scrollY || document.documentElement.scrollTop || 0',
+    );
+  } catch (_e) { /* first load or page not ready */ }
   if (currentPage === 'reminders') {
-    options.reminders = listReminders(store, { includeArchived: false });
+    const allReminders = listReminders(store, { includeArchived: true });
+    options.reminders = allReminders.filter(r => !r.archivedAt);
+    options.archivedReminders = allReminders.filter(r => r.archivedAt);
   }
   mainWindow.loadURL(htmlUrl(renderMainHtml(currentView(), options)));
 }
@@ -153,7 +160,7 @@ function createMainWindow() {
 function createTrayWidgetWindow() {
   trayWindow = new BrowserWindow({
     width: 420,
-    height: 720,
+    height: 800,
     frame: false,
     resizable: false,
     show: false,
@@ -552,6 +559,75 @@ function registerIpc() {
 
   ipcMain.on('dismiss-alarm', (_event, input = {}) => {
     requestAlarmDismiss(input.action ?? 'dismiss');
+  });
+
+  // Preview transition effect
+  ipcMain.on('preview-transition', () => {
+    const view = currentView();
+    let previewState = createAlarmState({
+      alarm: { label: '扫屏预览' },
+      seconds: 2,
+      now: view.now,
+      clickToDismiss: true,
+      transitionEffectId: view.settings.transitionEffectId,
+      transitionTriangleSizePx: view.settings.transitionTriangleSizePx,
+      transitionTiltDeg: view.settings.transitionTiltDeg,
+    });
+
+    const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+    let previewWindow = new BrowserWindow({
+      width: 640,
+      height: 480,
+      x: display.x + Math.round((display.width - 640) / 2),
+      y: display.y + Math.round((display.height - 480) / 2),
+      frame: false,
+      backgroundColor: '#050607',
+      resizable: false,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      webPreferences: {
+        nodeIntegration: true,
+        contextIsolation: false,
+      },
+    });
+
+    previewWindow.loadURL(htmlUrl(renderAlarmHtml(previewState)));
+
+    previewWindow.webContents.on('did-finish-load', () => {
+      previewWindow.webContents.executeJavaScript(`
+        window.dismissAlarm = () => require('electron').ipcRenderer.send('preview-dismiss');
+      `);
+    });
+
+    const previewTimer = setInterval(() => {
+      const prev = previewState;
+      previewState = tickAlarm(previewState);
+      if (previewState.status === 'dismissed') {
+        clearInterval(previewTimer);
+        if (previewWindow && !previewWindow.isDestroyed()) previewWindow.close();
+        return;
+      }
+      if (previewWindow && !previewWindow.isDestroyed() && shouldRenderAlarmFrame(prev, previewState)) {
+        previewWindow.loadURL(htmlUrl(renderAlarmHtml(previewState)));
+      }
+    }, 1000);
+
+    const dismissHandler = () => {
+      if (!previewState || previewState.status === 'dismissing' || previewState.status === 'dismissed') return;
+      previewState = tickAlarm(previewState, { event: 'click', action: 'dismiss' });
+      if (previewWindow && !previewWindow.isDestroyed()) {
+        previewWindow.loadURL(htmlUrl(renderAlarmHtml(previewState)));
+      }
+    };
+
+    ipcMain.on('preview-dismiss', dismissHandler);
+
+    previewWindow.on('closed', () => {
+      clearInterval(previewTimer);
+      previewWindow = null;
+      previewState = null;
+      try { ipcMain.removeListener('preview-dismiss', dismissHandler); } catch (_e) { /* ignore */ }
+    });
   });
 
   // Reminder IPC handlers

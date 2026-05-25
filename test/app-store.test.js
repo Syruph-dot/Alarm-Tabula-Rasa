@@ -76,7 +76,7 @@ describe('app store', () => {
       assert.equal(reloaded.runtime.mockNow, '2026-05-22T12:34:00+08:00');
       assert.equal(reloaded.settings.defaultEarlyEndCooldownMinutes, 90);
       assert.equal(reloaded.settings.transitionEffectId, 'base.black-sweep');
-      assert.equal(reloaded.settings.transitionTriangleSizePx, 112);
+      assert.equal(reloaded.settings.transitionTriangleSizePx, 600);
       assert.equal(reloaded.settings.transitionTiltDeg, -12);
       assert.ok(reloaded.personalProjects.some(item => item.label === 'New task'));
     } finally {
@@ -278,6 +278,22 @@ describe('app store', () => {
     assert.equal(updated.settings.transitionEffectId, 'blue-archive.sweep-1');
     assert.equal(updated.settings.transitionTriangleSizePx, 88);
     assert.equal(updated.settings.transitionTiltDeg, -21);
+  });
+
+  it('migrates the previous transition triangle default to the larger sweep size', () => {
+    const store = {
+      version: 1,
+      fixedEvents: {},
+      personalProjects: [],
+      comparisonHistory: [],
+      generatedTables: {},
+      settings: { transitionTriangleSizePx: 112 },
+      runtime: { timeMode: 'real', paused: false, itemCooldowns: [] },
+    };
+
+    const updated = updateSettings(store, {});
+
+    assert.equal(updated.settings.transitionTriangleSizePx, 600);
   });
 
   it('creates a reminder and persists title, dueAt, and default fields', () => {

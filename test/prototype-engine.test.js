@@ -372,6 +372,28 @@ describe('prototype free-time engine', () => {
     assert.equal(chosen.id, 'mid');
   });
 
+  it('does not schedule the same soft-fill item in adjacent generated blocks when alternatives exist', () => {
+    const blocks = rebuildFromNow(
+      [],
+      [
+        { id: 'dominant', label: 'Dominant', active: true, defaultDurationMinutes: 30, importanceScore: 3000 },
+        { id: 'backup', label: 'Backup', active: true, defaultDurationMinutes: 30, importanceScore: 100 },
+      ],
+      new Date('2026-05-22T12:00:00+08:00'),
+      {
+        date: '2026-05-22',
+        dayStart: '12:00',
+        dayEnd: '14:00',
+        minimumFillMinutes: 15,
+      },
+    );
+
+    assert.ok(blocks.length >= 3);
+    for (let index = 1; index < blocks.length; index += 1) {
+      assert.notEqual(blocks[index].itemId, blocks[index - 1].itemId);
+    }
+  });
+
   it('avoids immediately repeating the most recently compared pair when alternatives exist', () => {
     const items = [
       { id: 'a', label: 'A', active: true, importanceScore: 1500 },

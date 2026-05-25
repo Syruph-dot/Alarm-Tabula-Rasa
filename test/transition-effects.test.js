@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   calculateSweepScale,
   buildEquilateralTriangleGridModel,
+  DEFAULT_TRANSITION_SETTINGS,
   getTransitionEffect,
   normalizeTransitionSettings,
 } from '../src/lib/transition-effects.js';
@@ -57,6 +58,7 @@ describe('transition effects', () => {
   });
 
   it('normalizes transition settings and exposes grouped effects', () => {
+    assert.equal(DEFAULT_TRANSITION_SETTINGS.transitionTriangleSizePx, 600);
     assert.equal(getTransitionEffect('base.black-sweep').group, '基础');
     assert.equal(getTransitionEffect('blue-archive.sweep-1').group, '蔚蓝档案');
 
@@ -69,5 +71,6 @@ describe('transition effects', () => {
     assert.equal(normalized.transitionEffectId, 'blue-archive.sweep-1');
     assert.equal(normalized.transitionTriangleSizePx, 72);
     assert.equal(normalized.transitionTiltDeg, -14);
+    assert.equal(normalizeTransitionSettings({ transitionTriangleSizePx: 900 }).transitionTriangleSizePx, 600);
   });
 });

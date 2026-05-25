@@ -161,6 +161,12 @@ function shell({ title, body, script = '', compact = false }) {
     .block.future { background: #282615; border-left-color: #e0c05a; color: #fff7d6; }
     .lock-mark { font-size: 13px; color: #9eacbb; }
     .muted { color: #96a1ae; }
+    .archived-header { display: flex; align-items: center; gap: 6px; padding: 8px; border: 1px solid #29323e; border-radius: 6px; background: #13191f; cursor: pointer; font-size: 13px; color: #94a0ad; user-select: none; margin-top: 12px; }
+    .archived-header:hover { background: #1a2128; }
+    .archived-arrow { font-size: 11px; transition: transform 200ms; }
+    .archived-arrow.open { transform: rotate(90deg); }
+    .archived-items { display: none; gap: 6px; margin-top: 6px; }
+    .archived-items.open { display: grid; }
     .choice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .choice { min-height: 58px; text-align: left; }
     .primary-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -339,10 +345,11 @@ function renderProjectPage(view) {
   `).join('');
 }
 
-function renderReminderList(reminders = []) {
-  if (reminders.length === 0) return '<div class="muted">暂无提醒。</div>';
+function renderReminderList(activeReminders = [], archivedReminders = []) {
   const statusMap = { scheduled: '待提醒', snoozed: '已推迟', started: '进行中' };
-  return reminders.map(reminder => `
+  const activeHtml = activeReminders.length === 0
+    ? '<div class="muted">暂无提醒。</div>'
+    : activeReminders.map(reminder => `
     <div>
       <div class="item">
         <div>
@@ -362,6 +369,22 @@ function renderReminderList(reminders = []) {
       </div>
     </div>
   `).join('');
+
+  const archivedHtml = archivedReminders.length === 0 ? '' : `
+    <div class="archived-header" onclick="toggleArchived()">
+      <span class="archived-arrow" id="archiveArrow">▶</span>
+      <span>已归档 (${archivedReminders.length})</span>
+    </div>
+    <div class="archived-items" id="archivedItems">
+      ${archivedReminders.map(reminder => `
+        <div class="archived-item">
+          <strong>${esc(reminder.title)}</strong>
+          <small>${esc(reminder.dueAt?.slice(0, 10) ?? '')} ${esc(reminder.dueAt?.slice(11, 16) ?? '')}</small>
+        </div>
+      `).join('')}
+    </div>`;
+
+  return activeHtml + archivedHtml;
 }
 
 function renderTransitionOptions(selectedId) {
@@ -414,7 +437,7 @@ export function renderMainHtml(view, options = {}) {
       </section>
       <section class="panel section">
         <h2>提醒列表</h2>
-        <div class="list">${renderReminderList(options.reminders ?? [])}</div>
+        <div class="list">${renderReminderList(options.reminders ?? [], options.archivedReminders ?? [])}</div>
       </section>
     </div>
   ` : `
@@ -443,13 +466,14 @@ export function renderMainHtml(view, options = {}) {
               <summary>Transition</summary>
               <div class="fields">
                 <label>Effect<select id="transitionEffect">${renderTransitionOptions(view.settings.transitionEffectId)}</select></label>
-                <label>Triangle size<input id="transitionTriangleSize" type="number" min="24" max="180" value="${esc(view.settings.transitionTriangleSizePx ?? DEFAULT_TRANSITION_SETTINGS.transitionTriangleSizePx)}"></label>
+                <label>Triangle size<input id="transitionTriangleSize" type="number" min="24" max="600" value="${esc(view.settings.transitionTriangleSizePx ?? DEFAULT_TRANSITION_SETTINGS.transitionTriangleSizePx)}"></label>
                 <label>Tilt angle<input id="transitionTilt" type="number" min="-45" max="45" value="${esc(view.settings.transitionTiltDeg ?? DEFAULT_TRANSITION_SETTINGS.transitionTiltDeg)}"></label>
               </div>
             </details>
           </div>
           <div class="row section">
             <button data-action="update-settings" onclick="send('update-settings', { mockNow: localToIso(byId('mockNow').value), defaultEarlyEndCooldownMinutes: Number(byId('cooldown').value), dayStart: byId('dayStart').value, dayEnd: byId('dayEnd').value, transitionEffectId: byId('transitionEffect').value, transitionTriangleSizePx: Number(byId('transitionTriangleSize').value), transitionTiltDeg: Number(byId('transitionTilt').value) })">Save settings</button>
+            <button data-action="preview-transition" onclick="send('preview-transition')">预览</button>
           </div>
         </section>
         <section class="panel section">
@@ -528,6 +552,8 @@ export function renderMainHtml(view, options = {}) {
     title: 'Tabula Rasa',
     body,
     script: `
+var _scrollY = ${options.scrollY ?? 0};
+if (_scrollY > 0) { setTimeout(function() { window.scrollTo(0, _scrollY); }, 10); }
 var _pickerStart = null;
 var _pickerEnd = null;
 var _pickerLabel = null;
@@ -638,6 +664,13 @@ function addReminder() {
   if (!title || !date || !time) return;
   send('reminder:create', { title: title, dueAt: date + 'T' + time });
 }
+function toggleArchived() {
+  var items = byId('archivedItems');
+  var arrow = byId('archiveArrow');
+  if (!items || !arrow) return;
+  items.classList.toggle('open');
+  arrow.classList.toggle('open');
+}
 `,
   });
 }
@@ -693,6 +726,7 @@ ${renderCurrentActions(current)}
     </section>
     <section class="panel section">
       <h2>First impression</h2>
+      <div class="meta" style="margin-bottom:8px">闲下来了稍微做几个选择，做不完的，但是能够调整项目优先度</div>
       ${pairHtml}
     </section>
   </main>`;

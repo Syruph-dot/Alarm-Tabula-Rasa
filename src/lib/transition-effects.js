@@ -3,7 +3,7 @@ export const BLUE_ARCHIVE_SWEEP_1 = 'blue-archive.sweep-1';
 
 export const DEFAULT_TRANSITION_SETTINGS = {
   transitionEffectId: BASE_BLACK_SWEEP,
-  transitionTriangleSizePx: 112,
+  transitionTriangleSizePx: 400,
   transitionTiltDeg: -12,
 };
 
@@ -42,7 +42,7 @@ export function normalizeTransitionSettings(settings = {}) {
       settings.transitionTriangleSizePx,
       DEFAULT_TRANSITION_SETTINGS.transitionTriangleSizePx,
       24,
-      180,
+      400,
     ),
     transitionTiltDeg: clampNumber(
       settings.transitionTiltDeg,
@@ -54,7 +54,7 @@ export function normalizeTransitionSettings(settings = {}) {
 }
 
 export function buildEquilateralTriangleGridModel(options = {}) {
-  const triangleSizePx = clampNumber(options.triangleSizePx, DEFAULT_TRANSITION_SETTINGS.transitionTriangleSizePx, 24, 180);
+  const triangleSizePx = clampNumber(options.triangleSizePx, DEFAULT_TRANSITION_SETTINGS.transitionTriangleSizePx, 24, 400);
   const tiltDeg = clampNumber(options.tiltDeg, DEFAULT_TRANSITION_SETTINGS.transitionTiltDeg, -45, 45);
   const viewportWidth = clampNumber(options.viewportWidth, 1920, 1, 10000);
   const viewportHeight = clampNumber(options.viewportHeight, 1080, 1, 10000);

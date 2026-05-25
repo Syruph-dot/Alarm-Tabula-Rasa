@@ -5,7 +5,7 @@ import {
   normalizeTransitionSettings,
 } from './transition-effects.js';
 
-const DEFAULT_SWEEP_MS = 1200;
+const DEFAULT_SWEEP_MS = 2500;
 const SYR_PUSH_STRONG_LINEAR = 'linear(0, 0.003 5%, 0.014 10%, 0.026 15%, 0.048 20%, 0.087 25%, 0.177 30%, 0.417 35%, 0.661 40%, 0.847 45%, 0.901 50%, 0.934 55%, 0.957 60%, 0.973 65%, 0.985 70%, 0.991 75%, 0.995 80%, 0.997 85%, 0.999 90%, 1 95%, 1)';
 
 export function getNextAlarm(blocks, now) {
@@ -73,13 +73,19 @@ export function createAlarmState({
     transitionTriangleSizePx,
     transitionTiltDeg,
   });
+  const effectiveSweepInMs = transition.transitionEffectId === BLUE_ARCHIVE_SWEEP_1
+    ? sweepInMs * 2
+    : sweepInMs;
+  const effectiveSweepOutMs = transition.transitionEffectId === BLUE_ARCHIVE_SWEEP_1
+    ? sweepOutMs * 2
+    : sweepOutMs;
   return {
     status: 'sweeping-in',
     alarm,
     startedAt,
-    countdownStartedAt: new Date(startedAt.getTime() + sweepInMs),
-    sweepInMs,
-    sweepOutMs,
+    countdownStartedAt: new Date(startedAt.getTime() + effectiveSweepInMs),
+    sweepInMs: effectiveSweepInMs,
+    sweepOutMs: effectiveSweepOutMs,
     totalSeconds: seconds,
     remainingSeconds: seconds,
     clickToDismiss,
@@ -226,73 +232,92 @@ function renderBlueArchiveSweepSurface({ label, remaining, sweepInMs, sweepOutMs
     triangleSizePx: transition.transitionTriangleSizePx,
     tiltDeg: transition.transitionTiltDeg,
   });
-  const cells = grid.cells.map(cell => (
-    `<i data-cx="${round(cell.cx)}" data-cy="${round(cell.cy)}" style="--x:${round(cell.x)}px;--y:${round(cell.y)}px;--cx:${round(cell.cx)}px;--cy:${round(cell.cy)}px;--scale:0;--tri-points:${cell.points};"></i>`
-  )).join('');
-  const triangleHeight = round(grid.triangleHeightPx);
+  const domainStart = grid.bounds.minX - grid.triangleSizePx * 2;
+  const domainEnd = grid.bounds.maxX + grid.triangleSizePx * 2;
+  const domainSpan = Math.max(1, domainEnd - domainStart);
   const sweepSoftness = round(Math.max(16, grid.triangleSizePx * 0.42));
-  const domainStart = round(grid.bounds.minX - grid.triangleSizePx * 2);
-  const domainEnd = round(grid.bounds.maxX + grid.triangleSizePx * 2);
+  const palette = ['#a8ffff', '#19ffff', '#48dfff', '#8bc7ff', '#ffffff', '#71ffff', '#00f0ff', '#6bb8ff', '#b8d4ff'];
+  const cells = grid.cells.map((cell, idx) => (
+    `<i data-phase="${Math.random() * 6.283}" data-cx="${round(cell.cx)}" style="--x:${round(cell.x)}px;--y:${round(cell.y)}px;--tri-points:${cell.points};--tri-color:${palette[idx % palette.length]};"></i>`
+  )).join('');
   return {
     style: `
-    .ba-triangle-sweep { --triangle-size: ${grid.triangleSizePx}px; --triangle-height: ${triangleHeight}px; --grid-tilt: ${grid.tiltDeg}deg; --sweep-softness: ${sweepSoftness}px; --domain-start: ${domainStart}px; --domain-end: ${domainEnd}px; position: relative; width: 100%; height: 100%; overflow: hidden; background: #050607; display: flex; align-items: center; justify-content: center; }
-    .ba-grid { position: absolute; inset: 0; transform: rotate(var(--grid-tilt)); transform-origin: center; will-change: transform; }
-    .ba-grid i { position: absolute; width: var(--triangle-size); height: var(--triangle-height); clip-path: polygon(var(--tri-points)); background: linear-gradient(135deg, #a8ffff 0%, #19ffff 42%, #48dfff 72%, #8bc7ff 100%); opacity: 0.98; filter: drop-shadow(0 0 8px rgba(0, 245, 255, 0.38)) brightness(1.24); transform: translate(var(--x), var(--y)) scale(var(--scale)); transform-origin: center; will-change: transform; }
-    .ba-grid i:nth-child(3n) { opacity: 0.7; filter: drop-shadow(0 0 6px rgba(0, 245, 255, 0.32)) brightness(1.16); }
-    .ba-grid i:nth-child(5n) { background: linear-gradient(135deg, #ffffff 0%, #71ffff 38%, #00f0ff 100%); }
-    .ba-domain-driver { position: absolute; top: 0; left: 0; width: 1px; height: 1px; transform: translateX(var(--domain-start)); pointer-events: none; visibility: hidden; }
-    .alarm-screen.sweeping-in .ba-domain-driver { animation: baDomainIn ${sweepInMs}ms var(--syr-push-strong) both; }
-    .alarm-screen.dismissing .ba-domain-driver { animation: baDomainOut ${sweepOutMs}ms var(--syr-push-strong) both; }
-    .ba-triangle-sweep .alarm-content { position: relative; z-index: 2; text-shadow: 0 2px 18px rgba(0, 0, 0, 0.65); }
-    @keyframes baDomainIn {
+    .ba-triangle-sweep { --triangle-size: ${grid.triangleSizePx}px; --grid-tilt: ${grid.tiltDeg}deg; --sweep-softness: ${sweepSoftness}px; --domain-start: ${domainStart}px; --domain-end: ${domainEnd}px; position: relative; width: 100%; height: 100%; overflow: hidden; background: transparent; display: flex; align-items: center; justify-content: center; }
+    .ba-grid { position: absolute; inset: 0; z-index: 1; transform: rotate(var(--grid-tilt)); transform-origin: center; will-change: transform; }
+    .ba-grid i { position: absolute; width: var(--triangle-size); height: calc(var(--triangle-size) * 0.866); clip-path: polygon(var(--tri-points)); background: var(--tri-color); opacity: 0.95; filter: drop-shadow(0 0 6px var(--tri-color)) brightness(var(--b, 1)); transform: translate(var(--x), var(--y)) scale(var(--scale, 0)); transform-origin: center; }
+    .ba-driver { position: absolute; top: 0; left: 0; width: 1px; height: 1px; transform: translateX(var(--domain-start)); pointer-events: none; visibility: hidden; }
+    .alarm-screen.sweeping-in .ba-driver { animation: baDriveIn ${sweepInMs}ms var(--syr-push-strong) both; }
+    .alarm-screen.dismissing .ba-driver { animation: baDriveIn ${sweepOutMs}ms var(--syr-push-strong) both; }
+    .ba-triangle-sweep .alarm-content { position: relative; z-index: 2; }
+    .ba-bg { position: absolute; inset: 0; z-index: 0; background: #87CEEB; }
+    @keyframes baDriveIn {
       0% { transform: translateX(var(--domain-start)); }
       100% { transform: translateX(var(--domain-end)); }
     }
-    @keyframes baDomainOut {
-      0% { transform: translateX(var(--domain-end)); }
-      100% { transform: translateX(var(--domain-start)); }
-    }`,
-    body: `<div class="ba-triangle-sweep"><div class="ba-grid"><span class="ba-domain-driver"></span>${cells}</div>${renderAlarmContent(label, remaining)}${renderBlueArchiveSweepScript()}</div>`,
-  };
-}
-
-function renderBlueArchiveSweepScript() {
-  return `<script>
+    `,
+    body: `<div class="ba-triangle-sweep"><div class="ba-grid"><span class="ba-driver"></span>${cells}</div><div class="ba-bg"></div>${renderAlarmContent(label, remaining)}<script>
     (() => {
-      const root = document.currentScript.closest('.ba-triangle-sweep');
+      var root = document.currentScript.closest('.ba-triangle-sweep');
       if (!root) return;
-      const driver = root.querySelector('.ba-domain-driver');
-      const triangles = Array.from(root.querySelectorAll('.ba-grid i'));
-      const softness = readPx(getComputedStyle(root).getPropertyValue('--sweep-softness')) || 48;
-      function readPx(value) {
-        const number = Number(String(value).trim().replace('px', ''));
-        return Number.isFinite(number) ? number : 0;
-      }
+      var driver = root.querySelector('.ba-driver');
+      var tris = Array.from(root.querySelectorAll('.ba-grid i'));
+      var content = root.querySelector('.alarm-content');
+      var bg = root.querySelector('.ba-bg');
+      var screenEl = root.closest('.alarm-screen') || root.parentElement;
+      var st = getComputedStyle(root);
+      var soft = parseFloat(st.getPropertyValue('--sweep-softness')) || 48;
+      var ds = parseFloat(st.getPropertyValue('--domain-start')) || 0;
+      var de = parseFloat(st.getPropertyValue('--domain-end')) || 1000;
+      var mid = ds + (de - ds) * 0.5;
+      var span = de - ds;
+
       function driverX() {
-        const transform = getComputedStyle(driver).transform;
-        if (!transform || transform === 'none') return readPx(getComputedStyle(root).getPropertyValue('--domain-start'));
-        const values = transform.match(/matrix\\(([^)]+)\\)/);
-        if (!values) return readPx(getComputedStyle(root).getPropertyValue('--domain-start'));
-        const parts = values[1].split(',').map(part => Number(part.trim()));
-        return Number.isFinite(parts[4]) ? parts[4] : 0;
+        var t = getComputedStyle(driver).transform;
+        if (!t || t === 'none') return ds;
+        var m = t.match(/matrix\\(([^)]+)\\)/);
+        if (!m) return ds;
+        var p = m[1].split(',').map(Number);
+        return Number.isFinite(p[4]) ? p[4] : ds;
       }
-      function scaleFor(distance) {
-        if (distance <= -softness * 20) return 1;
-        if (distance >= softness * 20) return 0;
-        return 1 / (1 + Math.exp(distance / softness));
+
+      function sig(d) {
+        if (d <= -soft * 20) return 1;
+        if (d >= soft * 20) return 0;
+        return 1 / (1 + Math.exp(d / soft));
       }
+
       function update() {
-        const lineX = driverX();
-        for (const triangle of triangles) {
-          const cx = Number(triangle.dataset.cx);
-          const scale = Number.isFinite(cx) ? scaleFor(cx - lineX) : 0;
-          triangle.style.setProperty('--scale', scale.toFixed(3));
+        var t = performance.now() * 0.002;
+        var d1x = driverX();
+        var d2x = d1x >= mid ? ds + (d1x - mid) * 2 : ds;
+        for (var i = 0; i < tris.length; i++) {
+          var cx = parseFloat(tris[i].dataset.cx);
+          if (!Number.isFinite(cx)) continue;
+          var s1 = sig(cx - d1x);
+          var s2 = sig(d2x - cx);
+          tris[i].style.setProperty('--scale', (s1 * s2 * 0.95).toFixed(3));
+          var bright = 1.0 + 0.3 * Math.sin(t + (parseFloat(tris[i].dataset.phase) || 0));
+          tris[i].style.setProperty('--b', bright.toFixed(3));
         }
+
+        if (content) {
+          if (screenEl.classList.contains('sweeping-in')) {
+            var rc = Math.max(0, Math.min(100, 100 - (d2x - ds) / span * 200));
+            content.style.clipPath = bg.style.clipPath = 'inset(0 ' + rc + '% 0 0)';
+          } else if (screenEl.classList.contains('dismissing')) {
+            var lc = Math.max(0, Math.min(100, (d1x - ds) / span * 100));
+            content.style.clipPath = bg.style.clipPath = 'inset(0 0% 0 ' + lc + '%)';
+          } else {
+            content.style.clipPath = bg.style.clipPath = '';
+          }
+        }
+
         requestAnimationFrame(update);
       }
       update();
     })();
-  </script>`;
+    <\/script></div>`,
+  };
 }
 
 function round(value) {

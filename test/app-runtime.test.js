@@ -81,6 +81,35 @@ describe('app runtime', () => {
     assert.equal(result.view.softFillBlocks[0].itemId, 'b');
   });
 
+  it('rebuilds future soft-fill blocks without adjacent duplicate projects after preference sampling', () => {
+    const store = {
+      ...baseStore(),
+      fixedEvents: { '2026-05-22': [] },
+      personalProjects: [
+        { id: 'dominant', label: 'Dominant', active: true, defaultDurationMinutes: 30, importanceScore: 3000, confidence: 0.9 },
+        { id: 'backup', label: 'Backup', active: true, defaultDurationMinutes: 30, importanceScore: 100, confidence: 0.1 },
+      ],
+      settings: {
+        ...baseStore().settings,
+        dayStart: '08:00',
+        dayEnd: '10:00',
+      },
+    };
+
+    const result = resolvePreferenceInStore(store, {
+      now: new Date('2026-05-22T08:00:00+08:00'),
+      leftItemId: 'dominant',
+      rightItemId: 'backup',
+      choice: 'left',
+    });
+
+    const futureBlocks = result.view.softFillBlocks.filter(block => !block.break);
+    assert.ok(futureBlocks.length >= 3);
+    for (let index = 1; index < futureBlocks.length; index += 1) {
+      assert.notEqual(futureBlocks[index].itemId, futureBlocks[index - 1].itemId);
+    }
+  });
+
   it('adds temporary events to the persisted day and removes that time from soft fill', () => {
     const result = addTemporaryEventToStore(baseStore(), {
       now: new Date('2026-05-22T08:00:00+08:00'),

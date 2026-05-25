@@ -71,7 +71,8 @@ describe('electron renderers', () => {
     assert.match(html, /value="blue-archive\.sweep-1"/);
     assert.match(html, /扫屏1/);
     assert.match(html, /id="transitionTriangleSize"/);
-    assert.match(html, /id="transitionTriangleSize"[^>]*value="112"/);
+    assert.match(html, /id="transitionTriangleSize"[^>]*max="600"/);
+    assert.match(html, /id="transitionTriangleSize"[^>]*value="600"/);
     assert.match(html, /id="transitionTilt"/);
     assert.match(html, /data-action="set-time-mode"/);
     assert.match(html, /Course Table Import/);
